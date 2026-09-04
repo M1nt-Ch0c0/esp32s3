@@ -6,3 +6,5 @@
 |---|---|
 | [esp32s3](https://github.com/M1nt-Ch0c0/esp32s3) | 本专栏，索引其它仓库 |
 | [ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame) | 主机渲 800×480 六色 PNG，供 PhotoPainter 显示额度 |
+| [photopainter-host](https://github.com/M1nt-Ch0c0/photopainter-host) | PhotoPainter ESP32-S3 宿主固件，接收 PNG 并驱动 Spectra 6 屏幕 |
+| [photoframe](https://github.com/M1nt-Ch0c0/photoframe) | 可由宿主动态加载的相框应用组件 |
