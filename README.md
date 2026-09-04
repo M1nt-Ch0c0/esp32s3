@@ -1,45 +1,41 @@
-# ESP32-S3 固件专栏
+# ESP32-S3 开发专栏
 
-账号下没有 `M1nt-Ch0c0/esp32s3/photoframe` 这种嵌套仓库。本仓库就是专栏入口，路径对应：
+本仓库只做**索引**：链到本账号里所有基于 ESP32-S3 的仓库，以及已经核对、不准备改动的上游。这里不放可编译工程，也不 fork 别人的树。
 
-```text
-github.com/M1nt-Ch0c0/esp32s3                 专栏（本仓库）
-github.com/M1nt-Ch0c0/esp32s3/tree/main/host  宿主固件 + ELF 加载器
-github.com/M1nt-Ch0c0/esp32s3/tree/main/plugins/photoframe  组件：相框
-github.com/M1nt-Ch0c0/esp32s3/tree/main/plugins/xxx         以后的组件
-```
+自己写的新东西开新仓库，把链接加进下面的表。
 
-额度画面主机仍在独立仓库：[ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame)。本专栏只管设备侧：一份冻得住的宿主，业务以组件形式加载，降低整包重刷成本。
+## 本账号
 
-## 目标结构
+| 仓库 | 做什么 |
+|---|---|
+| [ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame) | 主机：从 CLIProxyAPI 取额度，渲 800×480 六色 PNG，给 PhotoPainter 显示 |
 
-```text
-Flash 里的宿主（少改）
-  ESP-IDF + 板级 HAL + Wi-Fi + elf_loader
-       │  启动后加载
-       ▼
-  组件 1  photoframe   收图 / 刷屏 / 鉴权
-  组件 2  xxx          以后再加
-```
+以后的宿主固件、相框组件、其它板子应用，都在这张表里加一行。
 
-宿主用乐鑫 [`espressif/elf_loader`](https://components.espressif.com/components/espressif/elf_loader)（`dlopen` / `esp_elf_*`）。组件编成 `.so` 或 `.app.elf`，放到 SD 或专用分区，不必每次改业务都重链整份 IDF。
+## 上游（只读链接，不 fork）
 
-当前状态：**专栏和目录骨架已建，宿主与组件尚未实现。** 先把边界定死，再写代码。
+这些按已验证 revision 使用，不改、不维护一份拷贝。
 
-## 目录
-
-| 路径 | 角色 | 更换频率 |
+| 项目 | 钉死版本 | 链接 |
 |---|---|---|
-| [`host/`](host/) | 最小 IDF 应用、加载器、PhotoPainter 板级、Wi-Fi | 低 |
-| [`plugins/photoframe/`](plugins/photoframe/) | 相框：推图、刷屏、设备 API | 中 |
-| [`plugins/xxx/`](plugins/xxx/) | 预留的下一个组件 | — |
-| [`docs/architecture.md`](docs/architecture.md) | 宿主 / 组件契约 | — |
+| 相框固件 [aitjcize/esp32-photoframe](https://github.com/aitjcize/esp32-photoframe) | commit [`bf029826`](https://github.com/aitjcize/esp32-photoframe/tree/bf0298263310c3fa023d42eca1e22f55948f1e50)（v2.18 已核对） | [源码树](https://github.com/aitjcize/esp32-photoframe/tree/bf0298263310c3fa023d42eca1e22f55948f1e50) · [PhotoPainter 7.3 预编译 merged.bin](https://github.com/aitjcize/esp32-photoframe/releases/download/v2.18.0/photoframe-firmware-waveshare_photopainter_73-merged.bin) |
+| ELF 加载器 [espressif/elf_loader](https://components.espressif.com/components/espressif/elf_loader) | 组件 **v1.3.3**（支持 ESP32-S3 / PSRAM、`dlopen`） | [组件登记](https://components.espressif.com/components/espressif/elf_loader/versions/1.3.3) · [源码（esp-iot-solution）](https://github.com/espressif/esp-iot-solution/tree/master/components/elf_loader) · [说明](https://github.com/espressif/esp-iot-solution/tree/master/examples/elf_loader) |
+| ESP-IDF | commit [`5e6f53c`](https://github.com/espressif/esp-idf/tree/5e6f53cdb31fe5708eae3f55af9737be2822db22)（测过 6.0.3） | [源码树](https://github.com/espressif/esp-idf/tree/5e6f53cdb31fe5708eae3f55af9737be2822db22) |
 
-## 相关仓库
+板型只认微雪 **ESP32-S3-PhotoPainter**（`waveshare_photopainter_73`，800×480 Spectra 6）。不要用 13.3 寸 E6 裸板的镜像。
 
-- [ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame)：主机渲 800×480 六色 PNG，现网仍可 URL 拉取；推图组件就绪后改为 `POST` 到设备。
-- 上游参考（只读，不 fork 进本专栏）：[aitjcize/esp32-photoframe](https://github.com/aitjcize/esp32-photoframe) @ `bf029826`
+钉死的 SHA 和刷写注意见 [docs/pins.md](docs/pins.md)。
+
+## 打算怎么用（还没开自己的固件仓库）
+
+```text
+官方相框固件 @ bf029826     ← 先整包刷，验证屏幕 / Wi-Fi
+espressif/elf_loader v1.3.3  ← 以后宿主用组件依赖引入，不 fork
+ai-quota-frame               ← 画面仍在主机渲
+```
+
+加载器和官方相框目前都当成品引用。自己的「宿主 + 组件」工程出现后，在本页加链接即可。
 
 ## 安全
 
-只在受信局域网使用。不要做公网端口映射。SD 上的 Wi-Fi 密码和组件文件视为明文，按物理介质保护。
+相框和设备 API 只放在受信局域网。不要做公网端口映射。
