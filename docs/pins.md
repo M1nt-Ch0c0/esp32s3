@@ -1,30 +1,24 @@
-# 已验证上游钉死
+# 钉死与参考
 
-本页只记录链接和 SHA，不保存上游源码。升级时改这一页，并在专栏 README 同步。
-
-## 相框固件
-
-- 仓库：https://github.com/aitjcize/esp32-photoframe
-- Commit：`bf0298263310c3fa023d42eca1e22f55948f1e50`
-- 板型：`waveshare_photopainter_73`
-- 预编译：https://github.com/aitjcize/esp32-photoframe/releases/download/v2.18.0/photoframe-firmware-waveshare_photopainter_73-merged.bin
-- merged.bin SHA-256（ai-quota-frame 文档曾核对）：`41a680d59ae65f37ef581fd66568a988fd0e64469617651b1a1ec98e77fd30b3`
-
-不 fork。要看结构或刷官方包，用上面的 commit / Release。定制相框行为以后开自己的仓库，不要改这份树再提上游。
-
-## ELF 加载器
-
-- 组件名：`espressif/elf_loader`
-- 版本：`1.3.3`（组件登记页记录 archive `5d75f3f0dc499d9ed4b69284a3741187c2b75a70`）
-- 引入：`idf.py add-dependency "espressif/elf_loader^1.3.3"`
-- 源码浏览：https://github.com/espressif/esp-iot-solution/tree/master/components/elf_loader
-- ESP32-S3 可在 PSRAM 执行 ELF；可选 `dlopen` / `dlsym`
-
-不 fork。宿主工程当普通 IDF 组件依赖即可。加载器本身按官方包使用。
+产品路径：**ESP-IDF + elf_loader + 本账号工程**。不把第三方相框固件当作运行时一层。
 
 ## ESP-IDF
 
 - Commit：`5e6f53cdb31fe5708eae3f55af9737be2822db22`
-- 说明：与上述相框固件交叉编译时测过的 6.0.3 附近 revision
+- 说明：6.0.3 附近，编 ESP32-S3 时对齐这一颗
 
-编官方相框或以后的宿主时对齐这一颗，避免「随便装一份最新 IDF」。
+## ELF 加载器
+
+- 组件：`espressif/elf_loader` **v1.3.3**
+- 引入：`idf.py add-dependency "espressif/elf_loader^1.3.3"`
+- 登记：https://components.espressif.com/components/espressif/elf_loader/versions/1.3.3
+- 源码：https://github.com/espressif/esp-iot-solution/tree/master/components/elf_loader
+- ESP32-S3 可在 PSRAM 跑 ELF；可选 `dlopen` / `dlsym`
+
+不 fork。当普通 IDF 组件用。
+
+## 可选参考（不是依赖）
+
+[aitjcize/esp32-photoframe](https://github.com/aitjcize/esp32-photoframe) @ `bf0298263310c3fa023d42eca1e22f55948f1e50` 是另一份 IDF 应用。自己做宿主时**不必刷它、不必 fork 它**。
+
+若要核对微雪 PhotoPainter 7.3 的引脚和 E6 时序，可以只读它的 `waveshare_photopainter_73` HAL，或对照微雪官方驱动。那是抄板级信息，不是把整份相框固件接进栈里。
