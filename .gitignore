@@ -1,0 +1,9 @@
+build/
+managed_components/
+sdkconfig.old
+.vscode/
+.idea/
+*.so
+*.app.elf
+dist/
+.env
