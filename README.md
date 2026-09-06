@@ -11,6 +11,8 @@
 
 ## PhotoPainter 当前架构
 
+四个仓库的职责、运行时架构图、构建依赖、A/B 回退流程及修改影响矩阵，见 **[架构总览](ARCHITECTURE.md)**。
+
 远端额度与用量接口 → 本机 SSH 隧道 → `ai-quota-frame` 生图及主动推送 → `photopainter-host` → 独立 A/B ELF → Spectra 6。
 
 - [首次部署、业务更新与回退](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-module-slots.md)
