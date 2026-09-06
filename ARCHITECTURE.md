@@ -2,7 +2,7 @@
 
 当前系统由四个仓库组成：`esp32s3` 提供索引和总览，三个实现仓库分别负责电脑端应用、设备框架和设备显示模块。设备应用独立打包、独立更新；每个应用保留自己的 A/B 版本，同一时刻只加载一个应用，通过约定的 ABI 在设备框架内运行。
 
-多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。多应用安装、更新、回退与重启恢复已完成真实设备验证，当前保留 photoframe 和独立 color-test 两个应用。实体 SD 的配置备份、两组写回、重启顺序连接及恢复已经验证；两个真实网络的可控切换与人工画面检查仍待验收，见 [实机证据](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-multi-app-hardware.md)。
+多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。多应用安装、更新、回退与重启恢复已完成真实设备验证，当前保留 photoframe 和独立 color-test 两个应用。实体 SD 的配置备份、两组写回、重启顺序连接及恢复已经验证；额度页面与 color-test v1 色带已经人工确认正常，两个真实网络的可控切换仍未验收，见 [实机证据](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-multi-app-hardware.md)。
 
 ## 1. 仓库分别做什么
 
