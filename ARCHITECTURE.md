@@ -1,6 +1,8 @@
 # PhotoPainter 仓库职责与架构
 
-当前系统由四个仓库组成：`esp32s3` 提供索引和总览，三个实现仓库分别负责电脑端应用、设备框架和设备显示模块。显示模块独立打包、独立更新；它通过约定的 ABI 在设备框架内运行。
+当前系统由四个仓库组成：`esp32s3` 提供索引和总览，三个实现仓库分别负责电脑端应用、设备框架和设备显示模块。设备应用独立打包、独立更新；每个应用保留自己的 A/B 版本，同一时刻只加载一个应用，通过约定的 ABI 在设备框架内运行。
+
+多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。当前新增功能仍待 SD、双网络及多应用实机验收；此前单应用硬件记录不能代替本次验收。
 
 ## 1. 仓库分别做什么
 
@@ -8,7 +10,7 @@
 |---|---|---|---|
 | [esp32s3](https://github.com/M1nt-Ch0c0/esp32s3) | 文档与开发入口 | 仓库索引、整体架构、部署文档导航 | Markdown 文档，不参与构建或设备运行 |
 | [ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame) | 本地电脑，当前部署为 macOS | 从远端采集额度和用量；用 Chrome 排版并生成六色 PNG；调度、去重、排队和主动推送；提供常驻服务及 SSH 隧道安装器 | Go 程序、800×480 PNG、macOS LaunchAgent 和本地启动器 |
-| [photopainter-host](https://github.com/M1nt-Ch0c0/photopainter-host) | ESP32-S3 | 启动、NVS 配网、Wi-Fi、HTTP 鉴权、请求缓冲；ELF 包校验、A/B 槽管理、加载、确认与回退；维护固定宿主 ABI | 框架固件 `photopainter_host.bin`；电脑端管理工具 `tools/module.py` |
+| [photopainter-host](https://github.com/M1nt-Ch0c0/photopainter-host) | ESP32-S3 | 启动、SD/NVS 多组配网、Wi-Fi、HTTP 鉴权、请求缓冲；ELF 包校验、应用目录、每应用 A/B 槽管理、单实例加载、确认与回退；维护固定宿主 ABI | 框架固件 `photopainter_host.bin`；电脑端管理工具 `tools/module.py` |
 | [photoframe](https://github.com/M1nt-Ch0c0/photoframe) | ESP32-S3，由框架加载 | 完整 PNG 解码与六色校验；像素旋转/打包；AXP2101 电源、GPIO/SPI、Spectra 6 E6 刷新与关断 | 部署使用 `photoframe.app.elf`；另产出 `photoframe.so`，当前宿主不加载它 |
 
 额度接口、页面布局和刷新计划属于 `ai-quota-frame`；网络接入及模块生命周期属于 `photopainter-host`；图像解码和真实面板操作属于 `photoframe`。因此“更换额度页面”和“升级显示驱动”是两条不同的更新路径。
@@ -27,13 +29,14 @@ flowchart TB
     end
     subgraph Device[ESP32-S3 PhotoPainter]
         Host["photopainter-host<br/>Wi-Fi / HTTP / 鉴权 / ELF 生命周期"]
-        Slots["Flash：ELF A、ELF B<br/>独立 NVS 状态日志"]
-        Module["photoframe.app.elf<br/>当前选中的显示模块"]
+        Slots["Flash：5 个应用，各自 A/B<br/>NVS：目录、选中应用、试运行日志"]
+        Module["photoframe.app.elf<br/>唯一加载的当前应用"]
         Panel["AXP2101 ALDO4 / SPI<br/>Spectra 6 面板"]
     end
     API -->|接口响应经隧道传回| Tunnel
     Tunnel --> App
-    App -->|"POST /api/push：PNG + Bearer"| Host
+    SD["可选 SD config/wifi.json<br/>启动读取：最多 10 组网络"] --> Host
+    App -->|"POST /api/push：PNG + Bearer + 应用 ID"| Host
     Admin -.->|"/api/module：包与管理命令"| Host
     Host -->|校验、写入、选择和恢复| Slots
     Slots -.->|择一读取并重定位| Module
@@ -91,7 +94,7 @@ flowchart TD
     Invalid --> Remain["不确认候选<br/>等待下一次有效输入或回退"]
 ```
 
-两个槽属于同一个框架固件，不是两份整机固件，也不会并行运行两个显示模块。只有一个槽被选中执行。新上传会占用备用槽，因此旧 `previous` 版本可能被覆盖；当前已确认版本仍保留。首次种子 A 是初始化基线，必须做真实刷屏验证后才能作为可用回退依据。手动 `rollback` 可取消待激活/试运行候选，或切回上一已确认版本。
+每个应用的两个槽属于同一个框架固件，不是两份整机固件，也不会并行运行两个应用。五个应用各自有两个槽，全局只有一个应用的一个槽被加载执行。新上传只占用目标应用的备用槽，因此该应用旧 `previous` 版本可能被覆盖；它的当前已确认版本及其他应用的两个版本仍保留。切换到另一应用也先持久化试运行记录，实体刷新成功才确认选择，失败或重启恢复原应用。首次种子 A 是初始化基线，必须做真实刷屏验证后才能作为可用回退依据。手动 `rollback` 可取消待激活/试运行候选，或切回上一已确认版本。
 
 ## 5. 修改某项功能时，需要动哪些仓库
 
@@ -106,7 +109,7 @@ flowchart TD
 
 ## 6. 配置边界与详细文档
 
-Wi-Fi 凭据与推图令牌保存在设备 NVS；远端管理凭据只保存在电脑端受保护的本地配置中。模块仓库不保存任何凭据。模块管理与推图共用设备端鉴权和端口，管理响应 200 不等于屏幕刷新成功。源码仓库不包含真实密钥、NVS 镜像、Flash 备份或含凭据日志。
+Wi-Fi 优先读取 SD 的合法 JSON 列表，无卡/缺失文件时读取 NVS 多组配置并兼容旧单组配置；合法空列表与损坏文件不会被旧凭据掩盖。推图令牌保存在设备 NVS；远端管理凭据只保存在电脑端受保护的本地配置中。模块仓库不保存任何凭据。模块管理与推图共用设备端鉴权和端口，管理响应 200 不等于屏幕刷新成功。源码仓库不包含真实密钥、NVS 镜像、Flash 备份或含凭据日志。
 
 - [首次迁移、包格式、槽位状态与命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-module-slots.md)
 - [macOS 常驻部署与远端隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
