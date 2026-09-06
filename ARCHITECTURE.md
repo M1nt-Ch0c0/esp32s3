@@ -1,121 +1,102 @@
 # PhotoPainter 仓库职责与架构
 
-当前系统由四个仓库组成：`esp32s3` 提供索引和总览，三个实现仓库分别负责电脑端应用、设备框架和设备显示模块。设备应用独立打包、独立更新；每个应用保留自己的 A/B 版本，同一时刻只加载一个应用，通过约定的 ABI 在设备框架内运行。
+整个系统可以理解成“电脑制作内容，设备运行应用，屏幕负责显示”。四个仓库分别保存一部分工作；它们不需要一起编译，但要遵守共同的接口。
 
-多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。多应用安装、更新、回退与重启恢复已完成真实设备验证，当前保留 photoframe 和独立 color-test 两个应用。实体 SD 的配置备份、两组写回、重启顺序连接及恢复已经验证；额度页面与 color-test v1 色带已经人工确认正常，两个真实网络的可控切换仍未验收，见 [实机证据](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-multi-app-hardware.md)。
+## 四个仓库做什么
 
-## 1. 仓库分别做什么
-
-| 仓库 | 运行位置 | 主要职责 | 主要产物 |
+| 仓库 | 在哪里运行 | 负责什么 | 更新产物 |
 |---|---|---|---|
-| [esp32s3](https://github.com/M1nt-Ch0c0/esp32s3) | 文档与开发入口 | 仓库索引、整体架构、部署文档导航 | Markdown 文档，不参与构建或设备运行 |
-| [ai-quota-frame](https://github.com/M1nt-Ch0c0/ai-quota-frame) | 本地电脑，当前部署为 macOS | 从远端采集额度和用量；用 Chrome 排版并生成六色 PNG；调度、去重、排队和主动推送；提供常驻服务及 SSH 隧道安装器 | Go 程序、800×480 PNG、macOS LaunchAgent 和本地启动器 |
-| [photopainter-host](https://github.com/M1nt-Ch0c0/photopainter-host) | ESP32-S3 | 启动、SD/NVS 多组配网、Wi-Fi、HTTP 鉴权、请求缓冲；ELF 包校验、应用目录、每应用 A/B 槽管理、单实例加载、确认与回退；维护固定宿主 ABI | 框架固件 `photopainter_host.bin`；电脑端管理工具 `tools/module.py` |
-| [photoframe](https://github.com/M1nt-Ch0c0/photoframe) | ESP32-S3，由框架加载 | 完整 PNG 解码与六色校验；像素旋转/打包；AXP2101 电源、GPIO/SPI、Spectra 6 E6 刷新与关断 | 部署使用 `photoframe.app.elf`；另产出 `photoframe.so`，当前宿主不加载它 |
+| `esp32s3` | 不运行 | 入口、说明、架构图 | 文档 |
+| `ai-quota-frame` | 电脑 | 采集 Codex/Grok/Kimi 等额度，排版成 800×480 六色 PNG，按计划推送 | Go 程序与本地服务 |
+| `photopainter-host` | ESP32-S3 | Wi-Fi、鉴权、HTTP、安装目录、A/B、应用切换；提供显示、缓存和时间服务，拥有 ABI 2 板级驱动 | 宿主固件 `.bin` |
+| `photoframe` | 由设备宿主加载 | 相框、色带等应用；解码或生成内容，决定启动时显示什么 | 每个应用独立 `.app.elf`；另保留旧 `.so` |
 
-额度接口、页面布局和刷新计划属于 `ai-quota-frame`；网络接入及模块生命周期属于 `photopainter-host`；图像解码和真实面板操作属于 `photoframe`。因此“更换额度页面”和“升级显示驱动”是两条不同的更新路径。
+例如：把额度页面的字体放大，只改电脑端；相框启动时换一张等待页，只改相框应用；修改 GPIO 或屏幕电源时序，则改宿主的板级组件。
 
-## 2. 运行时架构图
+## 一张图看运行过程
 
 ```mermaid
 flowchart TB
-    subgraph Remote[远端服务器]
-        API["CLIProxyAPI / CPAMP<br/>额度与用量接口"]
-    end
-    subgraph PC[本地电脑]
-        Tunnel["SSH 隧道<br/>仅监听 loopback"]
-        App["ai-quota-frame<br/>采集 → 排版 → 六色 PNG → 调度推送"]
-        Admin["tools/module.py<br/>模块打包、上传、激活与回退"]
-        WiFiAdmin["tools/wifi_device.py<br/>私有备份 / 更新 SD Wi-Fi"]
-    end
-    subgraph Device[ESP32-S3 PhotoPainter]
-        Host["photopainter-host<br/>Wi-Fi / HTTP / 鉴权 / ELF 生命周期"]
-        Slots["Flash：5 个应用，各自 A/B<br/>NVS：目录、选中应用、试运行日志"]
-        Module["photoframe.app.elf<br/>唯一加载的当前应用<br/>photoframe 或 color-test"]
-        Panel["AXP2101 ALDO4 / SPI<br/>Spectra 6 面板"]
-    end
-    API -->|接口响应经隧道传回| Tunnel
-    Tunnel --> App
-    SD["可选 SD config/wifi.json<br/>启动读取/首次迁移：最多 10 组网络"] --> Host
-    WiFiAdmin -.->|"/api/wifi：鉴权配置管理"| Host
-    Host -.->|"原子保存，下次重启生效"| SD
-    App -->|"POST /api/push：PNG + Bearer + 应用 ID"| Host
-    Admin -.->|"/api/module：包与管理命令"| Host
-    Host -->|校验、写入、选择和恢复| Slots
-    Slots -.->|择一读取并重定位| Module
-    Host -->|通过固定 ABI 调用| Module
-    Module -->|完整验图后才操作硬件| Panel
-    Module -->|最终关断等待完成后报告结果| Host
-    Host -->|刷屏成功才返回 HTTP 200| App
+    API[远端额度接口] --> Tunnel[本机 SSH 隧道]
+    Tunnel --> PC[ai-quota-frame：采集、排版、生图]
+    PC -->|PNG + Bearer| HTTP[设备 HTTP：鉴权、大小和目标检查]
+    CLI[管理工具：安装、切换、更新] --> HTTP
+    HTTP --> Manager[App Manager：唯一调度任务]
+    Key[GPIO 4 功能键] --> Manager
+    Events[定时和网络状态] --> Manager
+    Manager --> Catalog[Flash：5 个应用，各自 A/B]
+    Manager --> Loader[ELF Runtime：只加载一个应用]
+    Loader --> App[相框 / 色带 / 其他 ABI 2 应用]
+    App -->|统一六色像素帧| Services[宿主显示服务]
+    Services --> Board[板级组件：旋转打包、电源、E6]
+    Board --> Panel[电子纸]
+    App <--> Cache[宿主 RAM 缓存：由应用决定内容与恢复方式]
 ```
 
-实线描述取数、推图和显示路径；虚线描述模块管理与加载路径。图中远端到本机的箭头表示数据返回方向，连接由本机主动发起。`esp32s3` 是文档索引，不在运行链路内。
+HTTP 不直接切换 ELF，按键不直接刷屏，应用不修改 Flash 槽。管理器安排执行顺序，应用生成自己的内容，显示服务将统一像素帧交给固定硬件。电脑端通过 HTTP 推送图片，不控制当前应用选择。
 
-当前 macOS 部署有两个独立常驻任务：一个维护 SSH 隧道，一个运行采集/生图/推送程序。设备接收 PNG、模块包和本地 Wi-Fi 配置，不连接远端额度接口，也不需要远端管理密钥。
+`esp32s3` 不在运行链路中。设备没有远端额度管理密钥，也不直接访问额度接口；密钥只留在电脑端。设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
 
-## 3. 耦合关系
+## 应用如何运行和切换
 
-### 构建与发布：三个实现仓库独立
+这里的应用是一份 ELF 代码，不是手机上的独立进程。当前最多安装 **5 个应用**，每个应用有两个 1 MiB 版本槽，同一时间只运行其中一个。A/B 表示升级前后两个版本，不能算成 10 个应用。
+
+ABI 是宿主与应用约好的调用规则。ABI 2 接收 START、INPUT、TIMER、NETWORK_CHANGED、STOP 五种事件；每次处理完都要报告结果。两个真实应用的 START 已实现自主页面：
+
+| 场景 | 实际执行 |
+|---|---|
+| 开机进入相框 | 有可用 RAM 缓存则恢复图片；重启后缓存通常为空，显示 WAITING FOR IMAGE |
+| 电脑推来额度图 | 相框完整解码验色，然后调用宿主显示服务；成功后保存可选帧缓存 |
+| 短按切到色带 | 相框 STOP → 卸载 → 色带 START → 自行生成六色帧 → 刷屏 → 确认选择 |
+| 短按切回相框 | 相框 START 自己选择恢复缓存或等待页，不需要电脑先发送触发图片 |
+| 色带运行时额度服务推图 | 默认目标仍是相框，宿主返回 409；不会抢回相框或把额度画进色带 |
+| 更新色带 | 写色带备用槽，显式 activate 启动新版；相框的两个槽保持不变 |
+| 未来增加时钟 | 应用在 START 显示时间或“时间未设置”，登记定时事件；切出后宿主取消定时器 |
+
+GPIO 4 短按在空闲时循环选择有 active 版本的 ABI 2 应用。忙时、长按或启动时按住不会积压多次切换。pending 更新不会被按键偷偷激活。BOOT 和电源键保持原功能。
+
+## 哪些耦合是必要的
+
+“耦合”是两部分必须知道彼此的约定。例如插头和插座需要相同规格，这种联系是必要的；但插座不需要知道接入的是台灯还是风扇。
+
+本次运行层把宿主与应用的联系收窄到 SDK、事件、逻辑帧和明确的返回结果。宿主不再要求所有应用先收到 PNG，也不写“相框要恢复哪张图”这类业务分支。相框决定内容，宿主保证显示接口和资源顺序。
+
+| 连接 | 仍需共同遵守的约定 | 修改影响 |
+|---|---|---|
+| 电脑 → 宿主 | 端口 80、Bearer、原始 PNG、最大 5 MiB、HTTP 状态 | 改协议需两端兼容 |
+| 电脑 → 相框 | 800×480、非隔行、完全不透明、精确六色 | 改图像格式需生成与解码两端验证 |
+| 宿主 → ABI 2 应用 | SDK 字段布局、manifest、允许导入、事件与结果码 | 新服务或接口变化需兼容宿主 |
+| 应用 → 显示服务 | 从左上逐行的 384000 字节六色索引帧 | 应用不再自行旋转或使用 GPIO/SPI |
+| 宿主板级组件 → 硬件 | 固定引脚、电源和 E6 时序 | 更换硬件需要更新宿主 |
+
+构建仍独立：宿主不调用兄弟应用工程，不嵌入业务 ELF。页面逻辑升级只更新应用；板级驱动升级需要更新宿主。设备两仓固定使用同一 ESP-IDF 提交和未修改的 Registry elf_loader 1.3.3。
+
+仍然存在原生代码共享内存的限制：应用不是沙箱，严重故障可能使设备重启。ABI 2 禁止直接导入任务/ISR/硬件 API，用宿主定时事件替代后台回调。缓存是有上限且可失败的 RAM，不是断电保存的相册。
+
+## 兼容、确认与恢复
+
+旧 ABI 1 仍能运行，保留原 PNG 桥接和 ELF 内的显示驱动，但没有 START 首屏，故功能键跳过它。CLI 仍能选择它，首次推图后确认。ABI 2 在 START 正确就绪且完成声明所需首屏后确认；无显示测试应用也可以确认。
 
 ```mermaid
 flowchart LR
-    PCSource["ai-quota-frame 源码"] --> Go["Go 构建"] --> PCBinary["电脑端程序"]
-    HostSource["photopainter-host 源码"] --> HostBuild["固定版本 ESP-IDF"] --> Firmware["框架固件 .bin"]
-    ModuleSource["photoframe 源码"] --> ModuleBuild["同一固定版本 ESP-IDF"] --> ELF["业务 .app.elf"]
-    ELF --> Pack["tools/module.py package"] --> Package["带 ABI、版本号及 SHA-256 的模块包"]
+    Stage[上传备用槽] --> Trial[显式试运行，先写日志]
+    Trial --> Start[加载并 START]
+    Start --> Ready[就绪及所需首屏完成]
+    Ready --> Commit[确认选择和版本]
+    Start -->|失败| Restore[恢复旧应用并重新 START]
+    Trial -->|确认前重启| Restore
 ```
 
-框架构建不会调用 `photoframe` 的构建，也不把业务 ELF 嵌入固件。三个仓库放在同级目录只是开发便利，不是框架编译的前提。第一次完整部署需要同时准备框架与种子模块；之后 ABI 兼容的模块更新通过网络写入备用槽，无需重刷框架。
+开机的已确认应用也有独立启动保护日志：active 失败只尝试 previous 一次；previous 也失败就停止应用执行，保留可用的鉴权管理能力，避免两个坏版本无限重启。损坏目录或保护记录不会被擦除或猜测恢复。
 
-`esp-idf` 是工具链和 SDK 依赖，不是第五个业务仓库。设备端两仓固定使用提交 `5e6f53cdb31fe5708eae3f55af9737be2822db22`，并使用未修改的 Registry `elf_loader` 1.3.3。电脑端运行还需要 Chrome/Chromium；远端部署通过 SSH 隧道访问接口。
+推图 HTTP 200 仍表示本次实体刷新和最终 POWER_OFF 等待完成；“ELF 已加载”“应用就绪”“版本已确认”是不同状态。状态接口分别提供 `ready`、`runtime_ready`、`confirmed` 与最近事件的显示凭据。电子纸保留旧图不代表设备此刻正在运行那个应用。
 
-### 运行与兼容：依赖明确的接口契约
+## 操作和验收入口
 
-| 两端 | 耦合点 | 兼容要求 |
-|---|---|---|
-| 远端接口 ↔ `ai-quota-frame` | API 地址、鉴权、返回数据结构 | 接口变化时调整电脑端采集器 |
-| `ai-quota-frame` ↔ `photopainter-host` | HTTP、独立 Bearer 令牌、PNG 输入和响应状态 | 原始 `image/png`，最大 5 MiB；只有推图 200 表示实体刷新及最终关断等待完成 |
-| `ai-quota-frame` ↔ `photoframe` | 经宿主传递的图像格式 | 800×480、非隔行、完全不透明、精确六色；格式变化需同时调整生成端和解码端 |
-| `photopainter-host` ↔ `photoframe` | ELF 格式、ABI 版本、导入符号、结果码和调用生命周期 | 当前 ABI 1；模块所需符号必须由宿主提供；每次调用必须报告结果 |
-| `photoframe` ↔ 硬件 | GPIO、I²C/SPI、电源与 E6 时序 | 对应当前 PhotoPainter/Spectra 6 硬件，屏幕电源为 ALDO4 |
+- [应用运行层、功能键、SDK 与状态字段](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-runtime-v2.md)
+- [本轮构建与实机验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-runtime-v2.md)
+- [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)
+- [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/codex/multi-wifi-apps/README.md)
+- [电脑常驻服务与隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
 
-宿主与模块之间有三个 PNG/结果桥接函数，以及内存、FreeRTOS、GPIO、I²C、SPI 等系统导出。固定导出表由 `photopainter-host/main/host_abi.c` 维护；新增宿主尚未提供的导入不能仅更新业务 ELF。
-
-构建和更新已经解耦，执行环境仍然耦合：业务 ELF 与宿主共享同一设备的内存、任务和硬件资源，**不是独立进程或安全沙箱**。模块出现崩溃可能导致设备重启。A/B 负责候选版本生命周期与重启恢复，不能隔离任意原生代码故障。推图和模块操作共用锁，避免模块执行时被切换。
-
-## 4. A/B 更新与回退
-
-```mermaid
-flowchart TD
-    Baseline["运行已确认模块"] --> Stage["校验新包并写入备用槽<br/>保留当前已确认槽"]
-    Stage --> Trial["显式激活候选<br/>先持久化 trial 标记，再加载"]
-    Trial --> Good["有效图片完成实体刷新<br/>最终 POWER_OFF 等待成功"]
-    Good --> Confirm["确认新版本<br/>原活动槽成为 previous"]
-    Trial --> Bad["加载失败、运行错误<br/>或确认前设备重启"]
-    Bad --> Restore["恢复已确认模块<br/>清除候选状态"]
-    Trial --> Invalid["输入 PNG 被拒绝"]
-    Invalid --> Remain["不确认候选<br/>等待下一次有效输入或回退"]
-```
-
-每个应用的两个槽属于同一个框架固件，不是两份整机固件，也不会并行运行两个应用。五个应用各自有两个槽，全局只有一个应用的一个槽被加载执行。新上传只占用目标应用的备用槽，因此该应用旧 `previous` 版本可能被覆盖；它的当前已确认版本及其他应用的两个版本仍保留。切换到另一应用也先持久化试运行记录，实体刷新成功才确认选择，失败或重启恢复原应用。首次种子 A 是初始化基线，必须做真实刷屏验证后才能作为可用回退依据。手动 `rollback` 可取消待激活/试运行候选，或切回上一已确认版本。
-
-## 5. 修改某项功能时，需要动哪些仓库
-
-| 想改什么 | 主要修改位置 | 部署影响 |
-|---|---|---|
-| 额度来源、账号展示、页面布局、刷新间隔 | `ai-quota-frame` | 更新电脑端程序或配置，不改设备代码 |
-| PNG 解码、像素处理、面板时序、电源设置 | `photoframe` | ABI 兼容时只更新模块包 |
-| Wi-Fi、鉴权、HTTP、槽位日志、加载与回退策略 | `photopainter-host` | 更新框架固件，保留现有模块和状态分区 |
-| 新增宿主导出、修改桥接函数签名或结果码 | `photopainter-host` + `photoframe` | 联合设计兼容方案并验证；旧模块可能不再兼容，不能直接套用普通模块更新流程 |
-| 改分辨率、六色约束或 PNG 契约 | `ai-quota-frame` + `photoframe`，按需调整宿主限制 | 同时验证生成、协议校验与解码路径 |
-| 改说明、导航和架构图 | `esp32s3` 及对应仓库文档 | 无运行时影响 |
-
-## 6. 配置边界与详细文档
-
-Wi-Fi 优先读取 SD 的合法 JSON 列表；首次缺失 JSON 时从 NVS 多组/单组配置或旧 wifi.txt 原子迁移，无卡时使用 NVS。合法空列表与损坏文件不会被旧凭据掩盖。私密文件管理工具支持追加网络、同名改密和调整顺序；在线 `/api/wifi` 提供 SD 配置备份与原子更新，使用同一 Bearer、端口和操作锁，修改下次重启生效。推图令牌保存在设备 NVS；远端管理凭据只保存在电脑端受保护的本地配置中。模块仓库不保存任何凭据。模块管理与推图共用设备端鉴权和端口，管理响应 200 不等于屏幕刷新成功。源码仓库不包含真实密钥、NVS 镜像、Flash 备份或含凭据日志。
-
-- [首次迁移、包格式、槽位状态与命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-module-slots.md)
-- [macOS 常驻部署与远端隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
-- [组件接口、输入限制与硬件依据](https://github.com/M1nt-Ch0c0/photoframe)
-- [实机验证记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-2026-09-06.md)
-- [开发流程与约束](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/.agents/skills/develop-photopainter-stack/SKILL.md)
+Wi-Fi 的合法 SD JSON 权威性、原子迁移和备份规则不变。应用启动与 Wi-Fi 分开：未配网或网络不可达时，离线应用仍可运行。源码不保存密钥、设备备份或含凭据日志。
