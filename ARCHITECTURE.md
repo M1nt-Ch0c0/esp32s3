@@ -2,7 +2,7 @@
 
 当前系统由四个仓库组成：`esp32s3` 提供索引和总览，三个实现仓库分别负责电脑端应用、设备框架和设备显示模块。设备应用独立打包、独立更新；每个应用保留自己的 A/B 版本，同一时刻只加载一个应用，通过约定的 ABI 在设备框架内运行。
 
-多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。多应用安装、更新、回退与重启恢复已完成真实设备验证，当前保留 photoframe 和独立 color-test 两个应用。SD 卡、两个真实网络的可控切换与人工画面检查仍待验收，见 [实机证据](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-multi-app-hardware.md)。
+多 Wi-Fi 和五应用目录的新实现与迁移命令见 [多应用指南](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)。多应用安装、更新、回退与重启恢复已完成真实设备验证，当前保留 photoframe 和独立 color-test 两个应用。实体 SD 的配置备份、两组写回、重启顺序连接及恢复已经验证；两个真实网络的可控切换与人工画面检查仍待验收，见 [实机证据](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-multi-app-hardware.md)。
 
 ## 1. 仓库分别做什么
 
@@ -26,6 +26,7 @@ flowchart TB
         Tunnel["SSH 隧道<br/>仅监听 loopback"]
         App["ai-quota-frame<br/>采集 → 排版 → 六色 PNG → 调度推送"]
         Admin["tools/module.py<br/>模块打包、上传、激活与回退"]
+        WiFiAdmin["tools/wifi_device.py<br/>私有备份 / 更新 SD Wi-Fi"]
     end
     subgraph Device[ESP32-S3 PhotoPainter]
         Host["photopainter-host<br/>Wi-Fi / HTTP / 鉴权 / ELF 生命周期"]
@@ -36,6 +37,8 @@ flowchart TB
     API -->|接口响应经隧道传回| Tunnel
     Tunnel --> App
     SD["可选 SD config/wifi.json<br/>启动读取/首次迁移：最多 10 组网络"] --> Host
+    WiFiAdmin -.->|"/api/wifi：鉴权配置管理"| Host
+    Host -.->|"原子保存，下次重启生效"| SD
     App -->|"POST /api/push：PNG + Bearer + 应用 ID"| Host
     Admin -.->|"/api/module：包与管理命令"| Host
     Host -->|校验、写入、选择和恢复| Slots
@@ -48,7 +51,7 @@ flowchart TB
 
 实线描述取数、推图和显示路径；虚线描述模块管理与加载路径。图中远端到本机的箭头表示数据返回方向，连接由本机主动发起。`esp32s3` 是文档索引，不在运行链路内。
 
-当前 macOS 部署有两个独立常驻任务：一个维护 SSH 隧道，一个运行采集/生图/推送程序。设备只接收 PNG 和模块包，不连接远端额度接口，也不需要远端管理密钥。
+当前 macOS 部署有两个独立常驻任务：一个维护 SSH 隧道，一个运行采集/生图/推送程序。设备接收 PNG、模块包和本地 Wi-Fi 配置，不连接远端额度接口，也不需要远端管理密钥。
 
 ## 3. 耦合关系
 
@@ -109,7 +112,7 @@ flowchart TD
 
 ## 6. 配置边界与详细文档
 
-Wi-Fi 优先读取 SD 的合法 JSON 列表；首次缺失 JSON 时从 NVS 多组/单组配置或旧 wifi.txt 原子迁移，无卡时使用 NVS。合法空列表与损坏文件不会被旧凭据掩盖。私密文件管理工具支持追加网络、同名改密和调整顺序。推图令牌保存在设备 NVS；远端管理凭据只保存在电脑端受保护的本地配置中。模块仓库不保存任何凭据。模块管理与推图共用设备端鉴权和端口，管理响应 200 不等于屏幕刷新成功。源码仓库不包含真实密钥、NVS 镜像、Flash 备份或含凭据日志。
+Wi-Fi 优先读取 SD 的合法 JSON 列表；首次缺失 JSON 时从 NVS 多组/单组配置或旧 wifi.txt 原子迁移，无卡时使用 NVS。合法空列表与损坏文件不会被旧凭据掩盖。私密文件管理工具支持追加网络、同名改密和调整顺序；在线 `/api/wifi` 提供 SD 配置备份与原子更新，使用同一 Bearer、端口和操作锁，修改下次重启生效。推图令牌保存在设备 NVS；远端管理凭据只保存在电脑端受保护的本地配置中。模块仓库不保存任何凭据。模块管理与推图共用设备端鉴权和端口，管理响应 200 不等于屏幕刷新成功。源码仓库不包含真实密钥、NVS 镜像、Flash 备份或含凭据日志。
 
 - [首次迁移、包格式、槽位状态与命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-module-slots.md)
 - [macOS 常驻部署与远端隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
