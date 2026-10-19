@@ -13,10 +13,11 @@
 
 四个仓库的职责、运行时架构图、构建依赖、A/B 回退流程及修改影响矩阵，见 **[架构总览](ARCHITECTURE.md)**。
 
-远端额度与用量接口 → 本机 SSH 隧道 → `ai-quota-frame` 生图及主动推送 → `photopainter-host` → 独立 A/B ELF → Spectra 6。
+远端 CPA 与 CMP → Google 登录网关（服务账号 ID Token）→ `ai-quota-frame` 生图及主动推送 → `photopainter-host` → 独立 A/B ELF → Spectra 6。
 
 - [首次部署、业务更新与回退](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-module-slots.md)
-- [macOS 常驻服务及 SSH 隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
+- [应用运行层（ABI 2）与功能键](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-runtime-v2.md)
+- [电脑端数据源与常驻运行](ARCHITECTURE.md#电脑端数据源与常驻运行)：网关鉴权、Windows 看门狗与 macOS 服务
 - [2026-09-06 实机验证记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-2026-09-06.md)
 
-宿主不再嵌入业务 ELF，业务更新无需重刷框架。ABI 2 支持自主首屏和 GPIO 4 短按切换，在 START 就绪及所需首屏后确认；旧 ABI 1 保持首次推图确认。宿主板级服务使用 ALDO4 供电。详细构建和维护约定以各项目文档为准，凭据及设备备份不入库。
+宿主不再嵌入业务 ELF，业务更新无需重刷框架。ABI 2 支持自主首屏和 GPIO 4 短按切换，在 START 就绪及所需首屏后确认；旧 ABI 1 保持首次推图确认。宿主板级服务使用 ALDO4 供电。电脑端不再需要 SSH 隧道或保存管理密钥，渲染用的 Chrome 进程随服务一起回收。详细构建和维护约定以各项目文档为准，凭据及设备备份不入库。
