@@ -7,7 +7,7 @@
 | 仓库 | 在哪里运行 | 负责什么 | 更新产物 |
 |---|---|---|---|
 | `esp32s3` | 不运行 | 入口、说明、架构图 | 文档 |
-| `ai-quota-frame` | 电脑 | 采集 Codex/Grok/Kimi 等额度，排版成 800×480 六色 PNG，按计划推送 | Go 程序与本地服务 |
+| `ai-quota-frame` | 电脑 | 经网关采集 Claude/Codex/Grok 等额度（显示哪几家可配置），排版成 800×480 六色 PNG，按计划推送 | Go 程序与本地服务 |
 | `photopainter-host` | ESP32-S3 | Wi-Fi、鉴权、HTTP、安装目录、A/B、应用切换；提供显示、缓存和时间服务，拥有 ABI 2 板级驱动 | 宿主固件 `.bin` |
 | `photoframe` | 由设备宿主加载 | 相框、色带等应用；解码或生成内容，决定启动时显示什么 | 每个应用独立 `.app.elf`；另保留旧 `.so` |
 
@@ -17,8 +17,8 @@
 
 ```mermaid
 flowchart TB
-    API[远端额度接口] --> Tunnel[本机 SSH 隧道]
-    Tunnel --> PC[ai-quota-frame：采集、排版、生图]
+    API[远端 CPA / CMP：账号、额度、用量] --> Gateway[Google 登录网关：服务账号 ID Token，仅放行采集路由]
+    Gateway --> PC[ai-quota-frame：采集、排版、生图]
     PC -->|PNG + Bearer| HTTP[设备 HTTP：鉴权、大小和目标检查]
     CLI[管理工具：安装、切换、更新] --> HTTP
     HTTP --> Manager[App Manager：唯一调度任务]
@@ -35,7 +35,7 @@ flowchart TB
 
 HTTP 不直接切换 ELF，按键不直接刷屏，应用不修改 Flash 槽。管理器安排执行顺序，应用生成自己的内容，显示服务将统一像素帧交给固定硬件。电脑端通过 HTTP 推送图片，不控制当前应用选择。
 
-`esp32s3` 不在运行链路中。设备没有远端额度管理密钥，也不直接访问额度接口；密钥只留在电脑端。设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
+`esp32s3` 不在运行链路中。设备不访问额度接口，也不持有任何远端凭据。管理密钥只留在服务器网关内，电脑端只持有一个无权限的 Google 服务账号密钥；设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
 
 ## 应用如何运行和切换
 
@@ -91,12 +91,48 @@ flowchart LR
 
 推图 HTTP 200 仍表示本次实体刷新和最终 POWER_OFF 等待完成；“ELF 已加载”“应用就绪”“版本已确认”是不同状态。状态接口分别提供 `ready`、`runtime_ready`、`confirmed` 与最近事件的显示凭据。电子纸保留旧图不代表设备此刻正在运行那个应用。
 
+## 电脑端数据源与常驻运行
+
+额度与用量来自服务器上的 CPA（CLIProxyAPI）和 CMP（cpa-manager-plus）。CPA 不直接对公网开放；电脑端通过 CMP 所在的 HTTPS 网关取数，不再使用 SSH 隧道：
+
+```mermaid
+flowchart LR
+    PC[ai-quota-frame] -->|"Bearer：Google ID Token"| Edge[Cloudflare]
+    Browser[浏览器] -->|Google 登录 Cookie| Edge
+    Edge --> Ingress[nginx 入口：只转发 JWT 形式的 Authorization；机器身份只放行四个路由]
+    Ingress --> OAuth[oauth2-proxy：校验签名、签发方、受众与邮箱白名单]
+    OAuth --> Backend[nginx 后端：再次鉴权，注入 CMP 管理密钥]
+    Backend --> CMP[CMP] -->|"/v0/management/* 转发，使用已保存的 CPA 密钥"| CPA[CPA]
+```
+
+- **机器身份**：电脑端用 Google 服务账号的 JSON 私钥签名断言，向 Google 换取一小时有效的 ID Token，受众是网关 oauth2-proxy 的 client_id，提前 5 分钟刷新。服务账号不需要任何 GCP IAM 角色，只用于证明身份，并须列在网关邮箱白名单中。配置项为 `GOOGLE_SERVICE_ACCOUNT_FILE` 与 `GOOGLE_ID_TOKEN_AUDIENCE`，两个 `BASE_URL` 都指向网关。
+- **最小放行**：带 ID Token 的请求只能访问 `GET auth-files`、`GET auth-files/download`、`POST api-call` 和 `GET dashboard/summary`，其他管理路由在入口返回 403。这类请求带 Bearer 头，浏览器不会跨站自动附带，所以跳过面向浏览器的 Origin 检查。浏览器发来的其它 `Authorization` 头在入口被丢弃，网页面板继续使用 Google 登录。
+- **撤销**：在 GCP 删除该服务账号密钥，或从网关邮箱白名单移除它，即可立即切断电脑端取数。
+- **已知取舍**：Grok 的计费接口需要账号 ID，程序通过 `auth-files/download` 读取，该接口返回的是完整凭据文件，经 HTTPS 传到电脑后只解析其中的 `sub` 字段。
+- **配置位置**：网关的 nginx、oauth2-proxy 配置和邮箱白名单只保存在服务器上，不在任何仓库中；修改前先备份，并用 `nginx -t` 检查。也可以不经网关，改用本机回环地址上的 CPA 和静态管理密钥，见 [ai-quota-frame 鉴权说明](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)。
+
+显示哪几家由 `DISPLAY_PROVIDERS` 决定，最多 5 行，与 CPA 中实际登录的账号无关。未显示的平台仍会被采集，它们的报错也会出现在页面顶部警告中。
+
+### Windows 常驻运行
+
+当前部署在 Windows 上：计划任务启动一个仓库外的看门狗 PowerShell 脚本，脚本循环检查，只在 `ai-quota-frame.exe` **不在运行时**才启动它，并把上一次运行的日志轮换为 `.log.1`。
+
+- 服务只主动推图，不监听任何端口，所以看门狗只能以"进程是否存在"判断健康。**不要恢复以 `:8787/healthz` 判断健康并强杀重启的旧写法**：新版程序没有这个端口，检查永远失败，结果是服务每分钟左右被强杀一次，渲染中的 Chrome 残留成孤儿进程，推图状态也跟着丢失。
+- 渲染时每帧启动一个无头 Chrome。结束时先让 Chrome 正常退出，再清理残留：Unix 上 Chrome 放在独立进程组里，结束后杀掉整组；Windows 上服务进程加入一个设置了 `KILL_ON_JOB_CLOSE` 的 Job Object，Chrome 和它的子进程自动继承这个 Job，所以服务即使被强杀，系统也会回收整棵进程树。
+- 停止服务时，`Stop-ScheduledTask` 只结束计划任务的外层进程，**看门狗 PowerShell 和它启动的 exe 会继续运行**。硬件测试前要连同这两个进程一起结束，并确认 `ai-quota-frame` 进程数为 0。
+
+macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)。
+
+### 设备网络
+
+`PHOTOFRAME_PUSH_URL` 写的是设备的固定 IP。设备换网络后要同步更新这个地址，尤其是连手机热点时，热点每次重开都可能换网段。设备只支持 2.4 GHz；SD 卡上有合法 `config/wifi.json` 时优先使用它，没插卡时使用 NVS 中的网络列表。判断设备是否在线时，用不带鉴权的 HTTP 请求，正常应返回 401。原生 USB 串口一打开就会让设备复位，不适合用来检查是否在线。
+
 ## 操作和验收入口
 
-- [应用运行层、功能键、SDK 与状态字段](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-runtime-v2.md)
-- [本轮构建与实机验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs/validation-runtime-v2.md)
-- [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/multi-wifi-apps/docs-multi-apps.md)
-- [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/codex/multi-wifi-apps/README.md)
-- [电脑常驻服务与隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
+- [应用运行层、功能键、SDK 与状态字段](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-runtime-v2.md)
+- [本轮构建与实机验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-runtime-v2.md)
+- [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-multi-apps.md)
+- [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/main/README.md)
+- [电脑端配置与鉴权](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)
 
 Wi-Fi 的合法 SD JSON 权威性、原子迁移和备份规则不变。应用启动与 Wi-Fi 分开：未配网或网络不可达时，离线应用仍可运行。源码不保存密钥、设备备份或含凭据日志。
