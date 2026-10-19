@@ -2,3 +2,7 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# Local design requested to remain outside version control.
+/docs/design/app-runtime-v2.md
+/.ruff_cache/

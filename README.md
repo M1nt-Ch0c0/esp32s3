@@ -19,4 +19,4 @@
 - [macOS 常驻服务及 SSH 隧道](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)
 - [2026-09-06 实机验证记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-2026-09-06.md)
 
-宿主不再嵌入业务 ELF，业务更新无需重刷框架。首次成功实体刷新后确认候选，未确认重启或失败回退；相框驱动使用 ALDO4 供电。详细构建和维护约定以各项目文档为准，凭据及设备备份不入库。
+宿主不再嵌入业务 ELF，业务更新无需重刷框架。ABI 2 支持自主首屏和 GPIO 4 短按切换，在 START 就绪及所需首屏后确认；旧 ABI 1 保持首次推图确认。宿主板级服务使用 ALDO4 供电。详细构建和维护约定以各项目文档为准，凭据及设备备份不入库。
