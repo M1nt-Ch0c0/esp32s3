@@ -7,8 +7,8 @@
 | 仓库 | 在哪里运行 | 负责什么 | 更新产物 |
 |---|---|---|---|
 | `esp32s3` | 不运行 | 入口、说明、架构图 | 文档 |
-| `ai-quota-frame` | 电脑 | 经网关采集 Claude/Codex/Grok 等额度（显示哪几家可配置），排版成 800×480 六色 PNG，按计划推送 | Go 程序与本地服务 |
-| `photopainter-host` | ESP32-S3 | Wi-Fi、鉴权、HTTP、安装目录、A/B、应用切换；提供显示、缓存和时间服务，拥有 ABI 2 板级驱动 | 宿主固件 `.bin` |
+| `ai-quota-frame` | 电脑 | 经网关采集额度、排版并推送六色 PNG；通过 BLE 发现设备地址、安装和管理应用 | Go 程序与本地服务 |
+| `photopainter-host` | ESP32-S3 | Wi-Fi、常驻 BLE、鉴权、HTTP、安装目录、A/B、应用切换；提供显示、缓存、时间和受管 BLE 服务，拥有 ABI 2 板级驱动 | 宿主固件 `.bin` |
 | `photoframe` | 由设备宿主加载 | 相框、色带等应用；解码或生成内容，决定启动时显示什么 | 每个应用独立 `.app.elf`；另保留旧 `.so` |
 
 例如：把额度页面的字体放大，只改电脑端；相框启动时换一张等待页，只改相框应用；修改 GPIO 或屏幕电源时序，则改宿主的板级组件。
@@ -21,7 +21,10 @@ flowchart TB
     Gateway --> PC[ai-quota-frame：采集、排版、生图]
     PC -->|PNG + Bearer| HTTP[设备 HTTP：鉴权、大小和目标检查]
     CLI[管理工具：安装、切换、更新] --> HTTP
+    PC <-->|发现及双向 HMAC 鉴权，更新运行时 IP| BLE[宿主常驻 NimBLE 外设]
+    CLI -->|分块包上传、显式激活及查询| BLE
     HTTP --> Manager[App Manager：唯一调度任务]
+    BLE -->|同一接纳锁和安装路径| Manager
     Key[GPIO 4 功能键] --> Manager
     Events[定时和网络状态] --> Manager
     Manager --> Catalog[Flash：5 个应用，各自 A/B]
@@ -31,9 +34,12 @@ flowchart TB
     Services --> Board[板级组件：旋转打包、电源、E6]
     Board --> Panel[电子纸]
     App <--> Cache[宿主 RAM 缓存：由应用决定内容与恢复方式]
+    App <-->|ABI 2.1：描述与值副本、合作式事件| AppBLE[宿主应用 GATT 服务：切出自动注销]
+    AppBLE <--> BLE
+    Manager -->|BLE 连接、断开和写入事件| App
 ```
 
-HTTP 不直接切换 ELF，按键不直接刷屏，应用不修改 Flash 槽。管理器安排执行顺序，应用生成自己的内容，显示服务将统一像素帧交给固定硬件。电脑端通过 HTTP 推送图片，不控制当前应用选择。
+HTTP、BLE 和按键都通过同一个管理器安排执行顺序；应用生成内容，显示服务将像素帧交给固定硬件。BLE 收齐应用包并校验 SHA-256 后调用 HTTP 已使用的 `app_manager_stage()`，显式激活、确认和回退也复用原来的状态机。电脑端定时推图仍通过 HTTP，不控制当前应用选择。
 
 `esp32s3` 不在运行链路中。设备不访问额度接口，也不持有任何远端凭据。管理密钥只留在服务器网关内，电脑端只持有一个无权限的 Google 服务账号密钥；设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
 
@@ -52,6 +58,7 @@ ABI 是宿主与应用约好的调用规则。ABI 2 接收 START、INPUT、TIMER
 | 色带运行时额度服务推图 | 默认目标仍是相框，宿主返回 409；不会抢回相框或把额度画进色带 |
 | 更新色带 | 写色带备用槽，显式 activate 启动新版；相框的两个槽保持不变 |
 | 未来增加时钟 | 应用在 START 显示时间或“时间未设置”，登记定时事件；切出后宿主取消定时器 |
+| BLE 回显示例 | ABI 2.1 在 START 注册一个自定义 GATT 服务；鉴权写入交给 App Manager，再由应用设置回显值；STOP 或卸载时取消服务和事件 |
 
 GPIO 4 短按在空闲时循环选择有 active 版本的 ABI 2 应用。忙时、长按或启动时按住不会积压多次切换。pending 更新不会被按键偷偷激活。BOOT 和电源键保持原功能。
 
@@ -64,6 +71,7 @@ GPIO 4 短按在空闲时循环选择有 active 版本的 ABI 2 应用。忙时�
 | 连接 | 仍需共同遵守的约定 | 修改影响 |
 |---|---|---|
 | 电脑 → 宿主 | 端口 80、Bearer、原始 PNG、最大 5 MiB、HTTP 状态 | 改协议需两端兼容 |
+| 电脑 → 宿主 BLE | 协议 v1、稳定设备 ID、双向 HMAC、序列号、GATT 分块与错误码 | 应用安装无需 IP 路由；协议改变需两端兼容 |
 | 电脑 → 相框 | 800×480、非隔行、完全不透明、精确六色 | 改图像格式需生成与解码两端验证 |
 | 宿主 → ABI 2 应用 | SDK 字段布局、manifest、允许导入、事件与结果码 | 新服务或接口变化需兼容宿主 |
 | 应用 → 显示服务 | 从左上逐行的 384000 字节六色索引帧 | 应用不再自行旋转或使用 GPIO/SPI |
@@ -72,6 +80,8 @@ GPIO 4 短按在空闲时循环选择有 active 版本的 ABI 2 应用。忙时�
 构建仍独立：宿主不调用兄弟应用工程，不嵌入业务 ELF。页面逻辑升级只更新应用；板级驱动升级需要更新宿主。设备两仓固定使用同一 ESP-IDF 提交和未修改的 Registry elf_loader 1.3.3。
 
 仍然存在原生代码共享内存的限制：应用不是沙箱，严重故障可能使设备重启。ABI 2 禁止直接导入任务/ISR/硬件 API，用宿主定时事件替代后台回调。缓存是有上限且可失败的 RAM，不是断电保存的相册。
+
+ABI 2.1 保持原结构布局，增加受管 BLE 导入和 BLE=6 事件。旧 `APP_MANIFEST` 仍声明 2.0，新服务使用 `APP_MANIFEST_BLE` 声明 2.1；宿主和打包工具拒绝在旧声明下使用新导入。应用只能注册自己的一个服务、最多四个特征，每值最多 128 字节；宿主复制描述和数据，不保存 ELF 回调。写入绑定运行代次和服务版本，切出清理后拒绝旧请求。发现广播及安装通道始终归宿主。
 
 ## 兼容、确认与恢复
 
@@ -125,7 +135,15 @@ macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/
 
 ### 设备网络
 
-`PHOTOFRAME_PUSH_URL` 写的是设备的固定 IP。设备换网络后要同步更新这个地址，尤其是连手机热点时，热点每次重开都可能换网段。设备只支持 2.4 GHz；SD 卡上有合法 `config/wifi.json` 时优先使用它，没插卡时使用 NVS 中的网络列表。判断设备是否在线时，用不带鉴权的 HTTP 请求，正常应返回 401。原生 USB 串口一打开就会让设备复位，不适合用来检查是否在线。
+配置 `PHOTOFRAME_DEVICE_ID` 后，电脑端会在启动和推图失败时通过 BLE 寻找对应设备。ID 来自稳定的 Wi-Fi MAC，不依赖系统显示的蓝牙地址。广播及只读特征提供协议版本、联网状态、IPv4 和 SSID 的截断 SHA-256；不发布 SSID 明文、令牌或密码。常见 SSID 仍可能被猜测比对，稳定 ID 也允许近距离追踪。
+
+电脑先使用现有设备令牌做双向 HMAC 挑战响应，再采信认证响应里的私有 IPv4，将 `/api/push` 目标保存在运行时，不改 `.env`。`PHOTOFRAME_PUSH_URL` 可以保留作初始/回退地址；没有配置设备 ID 时继续使用原 HTTP 模式。命令和响应还带会话序列号及 HMAC，防止伪造和重放；BLE 链路本身不加密，包内容和状态不保密，令牌始终不通过 BLE 明文传输。
+
+BLE 发现不能建立 IP 路由。换热点后，只要电脑能访问新 IP，HTTP 推图就能恢复；如果客户端隔离或跨网段路由仍不通，PNG 推送仍会失败。此时应用包的 BLE 安装、状态查询和显式激活仍可用。断线后释放上传缓冲和忙碌锁，重新连接可整包重传。成功暂存不代表激活或完成物理刷新。Windows 看门狗仍只检查进程存在，不新增监听端口。
+
+设备只支持 2.4 GHz；合法 SD `config/wifi.json` 的权威性和 NVS 网络列表规则不变。Wi-Fi 不可用或配置损坏不阻止本地应用与 BLE 发现启动；管理操作仍需要有效的设备令牌。通过不带鉴权的 HTTP 请求检查可达性时，正常应返回 401。不要通过打开原生 USB 串口检查在线状态，它会使设备复位。
+
+此次仅增加宿主代码，不改分区表，也没有宿主整机 OTA。将来授权更新时，在完整备份并校验后，只写 `0x10000` 的宿主二进制，保留应用槽、激活日志及 NVS。当前实现已做本机构建和逻辑测试，BLE 实机共存、Windows/macOS 蓝牙及运行时 RAM 仍待硬件验收。
 
 ## 操作和验收入口
 
@@ -134,5 +152,8 @@ macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/
 - [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-multi-apps.md)
 - [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/main/README.md)
 - [电脑端配置与鉴权](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)
+- [BLE 协议与应用 ABI 2.1](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/ble-discovery-app-ota/docs/ble-protocol.md)
+- [BLE 构建证据与硬件验收清单](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/ble-discovery-app-ota/docs/validation-ble.md)
+- [电脑端 BLE 命令](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/codex/ble-discovery-app-ota/docs/ble.md)
 
 Wi-Fi 的合法 SD JSON 权威性、原子迁移和备份规则不变。应用启动与 Wi-Fi 分开：未配网或网络不可达时，离线应用仍可运行。源码不保存密钥、设备备份或含凭据日志。
