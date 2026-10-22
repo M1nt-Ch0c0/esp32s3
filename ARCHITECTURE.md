@@ -133,6 +133,12 @@ flowchart LR
 
 macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)。
 
+### macOS BLE 部署
+
+Mac 原生构建使用 Go 1.26.0 和 CGO，链接 CoreBluetooth；应用包声明蓝牙和本地网络用途，BLE CLI 也能通过同一应用身份加载私有配置。LaunchAgent 负责登录启动、进程退出重启，仍不提供入站健康端口。数据源可使用与 Windows 相同的受限 HTTPS 网关和 Google ID Token；存在本机代理的环境需要给服务配置相应代理，设备推图始终绕过代理。
+
+2026-10-22 已在 Apple Silicon Mac 部署并启动，真实数据采集和六色 PNG 生成通过。当前相框与 Mac 不在同一地点，Mac 的蓝牙权限也尚待图形界面授权，因此它清除了旧推图 IP，按设备 ID 等待鉴权发现；Windows 继续负责当前相框。SSH 不提供跨地点的 BLE 连接能力。设备移到 Mac 附近后，应先停止 Windows 推图，再完成 Mac 权限、网络和实体刷新验收。详见 [macOS 部署记录](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/codex/ble-discovery-app-ota/docs/macos-deployment.md)。
+
 ### 设备网络
 
 配置 `PHOTOFRAME_DEVICE_ID`，或先用 `ble bind --device-id ...` 鉴权并绑定设备后，电脑端会在启动和推图失败时通过 BLE 寻找对应设备。绑定仅将公开 ID 写入系统用户配置目录下的独立 JSON，不改 `.env`；显式环境变量优先。ID 来自稳定的 Wi-Fi MAC，不依赖系统显示的蓝牙地址。广播及只读特征提供协议版本、联网状态、IPv4 和 SSID 的截断 SHA-256；不发布 SSID 明文、令牌或密码。常见 SSID 仍可能被猜测比对，稳定 ID 也允许近距离追踪。
