@@ -2,6 +2,8 @@
 
 整个系统可以理解成“电脑制作内容，设备运行应用，屏幕负责显示”。四个仓库分别保存一部分工作；它们不需要一起编译，但要遵守共同的接口。
 
+开发规范的正式入口为 [开发者 Wiki](wiki/Home.md)。2026-10-23 确定的新路线由 photoframe ABI 2.1 APP 实现 BLE 收图，宿主提供通用通信、鉴权、OTA、加载、切换和显示。APP 新路线已随配套客户端合入各仓 main，已完成部分实测，仍待剩余验收；本文也描述现有兼容实现，不能混为同一条通道。当前能力与待实现边界见 [状态页](wiki/Status-and-Evidence.md)。
+
 ## 四个仓库做什么
 
 | 仓库 | 在哪里运行 | 负责什么 | 更新产物 |
@@ -21,10 +23,10 @@ flowchart TB
     Gateway --> PC[ai-quota-frame：采集、排版、生图]
     PC -->|PNG + Bearer| HTTP[设备 HTTP：鉴权、大小和目标检查]
     CLI[管理工具：安装、切换、更新] --> HTTP
-    PC <-->|按 ID 发现、双向 HMAC、PNG 分块与完成凭据| BLE[宿主常驻 NimBLE 外设]
+    PC <-->|按 ID 发现、双向 HMAC、通用应用特征读写| BLE[宿主常驻 NimBLE 外设]
     CLI -->|分块包上传、显式激活及查询| BLE
     HTTP --> Manager[App Manager：唯一调度任务]
-    BLE -->|同一接纳锁、PNG 渲染和安装路径| Manager
+    BLE -->|同一接纳锁、应用事件和安装路径| Manager
     Key[GPIO 4 功能键] --> Manager
     Events[定时和网络状态] --> Manager
     Manager --> Catalog[Flash：5 个应用，各自 A/B]
@@ -36,10 +38,12 @@ flowchart TB
     App <--> Cache[宿主 RAM 缓存：由应用决定内容与恢复方式]
     App <-->|ABI 2.1：描述与值副本、合作式事件| AppBLE[宿主应用 GATT 服务：切出自动注销]
     AppBLE <--> BLE
+    AppBLE --> AppRx[photoframe APP 收图：ABI 2.1]
+    AppRx --> Services
     Manager -->|BLE 连接、断开和写入事件| App
 ```
 
-HTTP、BLE 和按键都通过同一个管理器安排执行顺序；应用生成内容，显示服务将像素帧交给固定硬件。BLE 收齐数据并校验 SHA-256 后，PNG 调用 HTTP 已使用的 `app_manager_render()`，应用包调用 `app_manager_stage()`；显式激活、确认和回退也复用原来的状态机。电脑端定时推图可选择纯 BLE，不控制当前应用选择。现有 ABI 1/2 相框使用同一 PNG 入口，不需要为 BLE 推图重新构建。
+HTTP、BLE 和按键通过同一个管理器安排执行顺序；APP 生成内容，宿主显示服务调用固定硬件。常驻应用 OTA 复用 `app_manager_stage()` 和既有激活/确认/回退状态机。图中的 APP 收图节点已实现并合入 main，仍待剩余实机验收；现有兼容宿主 PNG 通道仍调用 `app_manager_render()`，其客户端与测试保留，停止继续扩展。业务发送不能抢回当前应用选择。
 
 `esp32s3` 不在运行链路中。设备不访问额度接口，也不持有任何远端凭据。管理密钥只留在服务器网关内，电脑端只持有一个无权限的 Google 服务账号密钥；设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
 
@@ -137,13 +141,15 @@ macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/
 
 Mac 原生构建使用 Go 1.26.0 和 CGO，链接 CoreBluetooth；应用包声明蓝牙和本地网络用途，BLE CLI 也能通过同一应用身份加载私有配置。LaunchAgent 负责登录启动、进程退出重启，仍不提供入站健康端口。数据源可使用与 Windows 相同的受限 HTTPS 网关和 Google ID Token；存在本机代理的环境需要给服务配置相应代理，设备推图始终绕过代理。
 
-2026-10-23 相框已移到 Apple Silicon Mac 旁，使用独立 USB 供电、没有电池和 microSD。应用蓝牙权限可用，运行配置已切到纯 BLE；设备无需连接 Wi-Fi，Mac 仍需联网采集额度。SSH 只用于部署和维护，BLE 实际由现场 Mac 发起。具体版本、离线推图及更新测试证据见 [macOS 部署记录](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/codex/ble-image-push/docs/macos-deployment.md)。
+2026-10-23 相框已移到 Apple Silicon Mac 旁，使用独立 USB 供电、没有电池和 microSD。应用蓝牙权限可用，运行配置已切到纯 BLE；设备无需连接 Wi-Fi，Mac 仍需联网采集额度。SSH 只用于部署和维护，BLE 实际由现场 Mac 发起。具体版本、离线推图及更新测试证据见 [macOS 部署记录](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/main/docs/macos-deployment.md)。
 
 ### 设备网络
 
+BLE 图片默认通过 photoframe APP 的 ABI 2.1 服务发送，协议见 [应用原件](https://github.com/M1nt-Ch0c0/photoframe/blob/main/docs/ble-image-input.md)。宿主专用 PNG 通道保留兼容；以下缓存和接纳锁描述针对该旧通道。常驻发现和 OTA 不受当前 APP 选择影响。
+
 配置 `PHOTOFRAME_DEVICE_ID`，或先用 `ble bind --device-id ...` 鉴权并绑定设备后，电脑端会在启动和推图失败时通过 BLE 寻找对应设备。绑定仅将公开 ID 写入系统用户配置目录下的独立 JSON，不改 `.env`；显式环境变量优先。ID 来自稳定的 Wi-Fi MAC，不依赖系统显示的蓝牙地址。广播及只读特征提供协议版本、联网状态、IPv4 和 SSID 的截断 SHA-256；不发布 SSID 明文、令牌或密码。常见 SSID 仍可能被猜测比对，稳定 ID 也允许近距离追踪。
 
-设置 `PHOTOFRAME_PUSH_TRANSPORT=ble` 后，电脑按设备 ID 发现并做双向 HMAC 挑战响应，直接通过 GATT 发送 PNG。它不需要设备 IP，不访问 `PHOTOFRAME_PUSH_URL`，也不回退 HTTP。命令和响应带会话序列号及 HMAC，防止伪造和重放；BLE 链路本身不加密，图片、包内容和状态不保密，令牌始终不通过 BLE 明文传输。
+设置 `PHOTOFRAME_PUSH_TRANSPORT=ble` 后，电脑按设备 ID 发现并做双向 HMAC 挑战响应，通过签名应用特征读写向当前 photoframe ABI 2.1 服务发送 PNG。它不需要设备 IP，不访问 `PHOTOFRAME_PUSH_URL`，也不回退 HTTP。命令和响应带会话序列号及 HMAC，防止伪造和重放；BLE 链路本身不加密，图片、包内容和状态不保密，令牌始终不通过 BLE 明文传输。
 
 默认 `PHOTOFRAME_PUSH_TRANSPORT=http` 保持旧部署行为：BLE 认证发现私有 IPv4 后，只更新进程内的 `/api/push` 目标，不改 `.env`；`PHOTOFRAME_PUSH_URL` 可作为初始地址。此模式仍要求 IP 可达，BLE 发现不会建立跨网段路由。选择纯 BLE 才能使发现、推图和应用更新都不依赖相框 Wi-Fi。
 
@@ -162,9 +168,9 @@ BLE PNG 上限仍是 5 MiB，接收缓冲只分配在 PSRAM，与 HTTP 和应用
 - [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-multi-apps.md)
 - [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/main/README.md)
 - [电脑端配置与鉴权](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)
-- [BLE 协议与应用 ABI 2.1](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/ble-image-push/docs/ble-protocol.md)
-- [BLE 构建证据与 Windows 验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/ble-image-push/docs/validation-ble.md)
-- [Mac 离线 BLE 推图、更新及内存记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/codex/ble-image-push/docs/validation-ble-images.md)
-- [电脑端 BLE 命令](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/codex/ble-image-push/docs/ble.md)
+- [BLE 协议与应用 ABI 2.1](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/ble-protocol.md)
+- [BLE 构建证据与 Windows 验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-ble.md)
+- [Mac 离线 BLE 推图、更新及内存记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-ble-images.md)
+- [电脑端 BLE 命令](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/main/docs/ble.md)
 
 Wi-Fi 的合法 SD JSON 权威性、原子迁移和备份规则不变。应用启动与 Wi-Fi 分开：未配网或网络不可达时，离线应用仍可运行。源码不保存密钥、设备备份或含凭据日志。
