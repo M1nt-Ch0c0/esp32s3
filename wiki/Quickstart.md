@@ -19,6 +19,20 @@ python3 tools/doctor.py
 
 原生测试还需要 C 编译器、CMake、Ninja；宿主测试需要 OpenSSL 开发库。电脑端需要 `go.mod` 指定版本和 Chrome；macOS BLE 构建必须启用 CGO。
 
+### 换电脑继续开发
+
+五个仓库的当前实现均已进入 `main`，不依赖上一台电脑的 build 目录或未提交的临时脚本。设备已安装的宿主与 photoframe v20 会保留，换地点或换电脑不要求重新刷写/provision。
+
+- 仅换地点、仍使用原 Mac：保持相框稳定供电、Mac 蓝牙开启及互联网可用；当前相框走 BLE，不要求它加入当地 Wi-Fi。
+- 换新 Mac：克隆上述五仓，安装 Go、Chrome 和 Xcode Command Line Tools；宿主/APP 构建另需固定版本 ESP-IDF。当前 SwiftUI 控制台要求 Apple Silicon、macOS 14+；当前 CoC 客户端为 macOS 实现。
+- 私有 `.env`、设备独立 token、Google 服务账号文件和必要绑定配置不在 Git 中，须通过私有方式迁移，权限保持 0600。配置中的文件路径和本机代理端口须按新电脑调整。
+- 若源码不在默认兄弟目录，可在后台私有配置中设置 `PHOTOFRAME_HOST_REPO`，使 doctor、打包和 NVS 生成找到宿主工具；固定 IDF 可通过 `IDF_PATH` 指定。
+- Windows/Linux 可以构建 ESP32 固件与 APP，桌面发送器保留 GATT 路径；当前 SwiftUI GUI 和已完成的 CoC 后端不能直接当成跨平台版本。
+
+在新 Mac 的 `ai-quota-frame` 中执行 `make build`，再用 `python3 deploy/install-macos.py --binary dist/ai-quota-frame --env-file /private/path/frame.env --no-start` 安装后台与 USB 维护组件。在 `photopainter-console` 中执行 `sh build.sh` 构建控制台。
+
+先暂停旧电脑自动推图，再从新控制台启动后台、读取鉴权设备状态并完成一次显示确认，避免两台电脑同时连接。不要把删除过的旧构建文件、Flash/NVS 备份或私有配置提交到新仓库。意外 POWERON 复位的根因仍未定位，迁移不等于该问题已解决。
+
 ## 最小应用入口
 
 应用提供 `main()`，每次调用处理一个事件后返回。不要写 `app_main()` 加永久循环，也不要创建任务。
