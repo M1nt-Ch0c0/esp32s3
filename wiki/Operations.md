@@ -9,10 +9,14 @@
 1. 看主机进程/LaunchAgent，确认没有两个 pusher 或看门狗竞争。
 2. BLE 扫描只检查发现，不信任身份；进一步查询必须鉴权。
 3. 读取签名应用目录和当前状态，判断 loaded、runtime_ready、confirmed、pending、trial。
-4. 核对 APP 服务 generation/revision。非当前应用、旧代次、未注册或发布失败都可能不可用。
+4. 核对 APP 服务 generation/revision；CoC还要核对能力、session与实际选择通道。非当前应用、旧代次、未注册或发布失败都可能不可用。
 5. 只有在输入已验证、操作已授权且不会产生重复刷新时才执行业务请求。
 
-`payload_abi` 是当前 APP 的 ABI；顶层 `abi=1` 是管理封套。`display_completed` 表示最近事件，不是持久化显示历史。`last_result` 也可能来自后续网络/管理事件，不能单独推翻已有请求完成凭据。
+`payload_abi` 与 `payload_abi_minor` 是当前 APP 的完整 ABI；顶层 `abi=1` 是管理封套。`display_completed` 表示最近事件，不是持久化显示历史。`last_result` 也可能来自后续网络/管理事件，不能单独推翻已有请求完成凭据。
+
+## 可视化入口
+
+独立 [PhotoPainter Console](https://github.com/M1nt-Ch0c0/photopainter-console) 通过既有Unix socket使用后台唯一设备队列，集中呈现运行、连接发现、应用版本、图片推送、应用通信、Wi-Fi、USB维护和诊断。原理教程已从APP移除，保留在本Wiki。具体可执行能力及前置条件见 [控制台与CLI](Console-and-CLI.md)。
 
 ## Mac
 
@@ -45,6 +49,9 @@ launchctl bootout gui/$(id -u)/com.m1ntch0c0.ai-quota-frame
 | PNG 被拒绝 | 先原生验证尺寸、CRC、隔行、透明度、六色和尾随字节 |
 | 管理或显示回复丢失 | 查询状态/原回执，禁止直接重发变更命令 |
 | USB 消失且 uptime 变小 | 排查复位与供电；开串口本身也可能造成复位 |
+| CoC能力存在但本轮显示GATT | 核对电脑端CoC后端和实际协商结果，不能只看设备能力 |
+| CoC发送100%仍在等待 | 可能正在校验或刷屏，等待业务完成回执，不重发COMMIT |
+| 电量/PMIC关机原因未知 | 当前固件无对应遥测；不得从断线或复位码猜测数值 |
 
 历史电脑 USB 供电出现过 POWERON 复位，独立供电下通过过长包传输；这不足以确定故障部件或证明长期耐久。具体数值和环境见 [验证记录](Status-and-Evidence.md)。
 

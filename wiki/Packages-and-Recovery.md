@@ -65,6 +65,8 @@ python3 tools/module.py activate --app lifecycle --url http://DEVICE_IP
 
 CLI 私下加载令牌；不要把令牌放参数。以上是框架管理命令，应用业务输入另按 APP 文档执行。
 
+后台安装会区分连接、BEGIN、DATA、COMMIT阶段并报告实际发送字节。只有已鉴权的BEGIN返回BUSY=3（证明尚未接纳）可按75 ms间隔短暂重试，预算约2秒；传输错误、DATA和COMMIT不会因此自动重放。读回目录已达到目标状态时可以确认成功，不能仅凭命令回复丢失就重复写入。
+
 ## 失败与恢复
 
 | 场景 | 必须保持的结果 |

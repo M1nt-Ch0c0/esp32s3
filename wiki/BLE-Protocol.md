@@ -2,7 +2,7 @@
 
 [返回首页](Home.md) · [应用 BLE 开发](Application-BLE.md)
 
-这是宿主常驻通道的开发参考。应用自身的业务协议另行版本化；相框 APP 协议已实现并合入 main，见 [应用协议原件](https://github.com/M1nt-Ch0c0/photoframe/blob/main/docs/ble-image-input.md)。不能把宿主包上传命令照搬成 APP 收图规范。宿主完整字节契约见 [协议原件](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/ble-protocol.md)。
+这是宿主常驻 GATT 管理通道的参考。ABI 2.2 CoC 是配套数据通道，见 [CoC](Application-CoC.md)。应用自身的业务协议另行版本化；相框 APP 协议由应用仓库维护，见 [应用协议原件](https://github.com/M1nt-Ch0c0/photoframe/blob/main/docs/ble-image-input.md)。不能把宿主包上传命令照搬成 APP 收图规范。宿主完整字节契约见 [协议原件](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/ble-protocol.md)。
 
 ## 发现和 GATT
 

@@ -6,7 +6,7 @@
 
 ## 准备环境
 
-保持 `photopainter-host`、`photoframe`、`ai-quota-frame`、`esp32s3` 为兄弟目录，先看各仓 `git status`。四仓 `main` 已协调包含宿主 BLE/ABI 2.1、相框 APP BLE 收图、电脑端发送器和控制台；按 [代码基线与证据](Status-and-Evidence.md) 核对具体提交及剩余验收。
+保持 `photopainter-host`、`photoframe`、`ai-quota-frame`、`photopainter-console`、`esp32s3` 为兄弟目录，先看各仓 `git status`。控制台独立维护；当前 CoC APP 需要 ABI 2.2 宿主。按 [代码与部署状态](Status-and-Evidence.md) 核对实际提交和设备能力。
 
 ESP-IDF 必须固定为 `5e6f53cdb31fe5708eae3f55af9737be2822db22`，Registry elf_loader 为未修改的 1.3.3。工程会校验 IDF 提交；已有其他版本时使用独立 checkout，不改动别人的工具链或 managed components。
 
@@ -78,7 +78,7 @@ idf.py -B build-app -DIDF_TARGET=esp32s3 build
 | `examples/lifecycle` | 无显示、定时与 STOP |
 | `examples/color-test` | START 自主首屏、宿主显示接口 |
 | `examples/ble-echo` | ABI 2.1 注册、写入事件、设置回显与注销 |
-| 默认 `photoframe/main/entry.c` | PNG 解码、等待页与 RAM 逻辑帧恢复 |
+| 默认 `photoframe/main/entry.c` | ABI 2.2 CoC 收图、PNG 解码、等待页与 RAM 帧恢复 |
 
 SDK 副本必须与宿主一致：
 

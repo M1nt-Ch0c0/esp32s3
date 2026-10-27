@@ -1,176 +1,91 @@
 # PhotoPainter 仓库职责与架构
 
-整个系统可以理解成“电脑制作内容，设备运行应用，屏幕负责显示”。四个仓库分别保存一部分工作；它们不需要一起编译，但要遵守共同的接口。
+更新日期：2026-10-27。系统由电脑后台制作内容，常驻宿主提供通信与运行服务，唯一前台 APP 处理业务，电子纸完成显示。可视化控制台独立成仓，操作能力与开发原理文档分别维护。源码发布与实机状态见 [证据页](wiki/Status-and-Evidence.md)。
 
-开发规范的正式入口为 [开发者 Wiki](wiki/Home.md)。2026-10-23 确定的新路线由 photoframe ABI 2.1 APP 实现 BLE 收图，宿主提供通用通信、鉴权、OTA、加载、切换和显示。APP 新路线已随配套客户端合入各仓 main，已完成部分实测，仍待剩余验收；本文也描述现有兼容实现，不能混为同一条通道。当前能力与待实现边界见 [状态页](wiki/Status-and-Evidence.md)。
+## 五个仓库
 
-## 四个仓库做什么
-
-| 仓库 | 在哪里运行 | 负责什么 | 更新产物 |
+| 仓库 | 运行位置 | 职责 | 产物 |
 |---|---|---|---|
-| `esp32s3` | 不运行 | 入口、说明、架构图 | 文档 |
-| `ai-quota-frame` | 电脑 | 经网关采集额度、排版；通过 BLE 或 HTTP 推送六色 PNG、安装和管理应用 | Go 程序与本地服务 |
-| `photopainter-host` | ESP32-S3 | Wi-Fi、常驻 BLE、鉴权、HTTP、安装目录、A/B、应用切换；提供显示、缓存、时间和受管 BLE 服务，拥有 ABI 2 板级驱动 | 宿主固件 `.bin` |
-| `photoframe` | 由设备宿主加载 | 相框、色带等应用；解码或生成内容，决定启动时显示什么 | 每个应用独立 `.app.elf`；另保留旧 `.so` |
+| esp32s3 | 不运行 | Wiki、跨仓架构与导航 | 文档 |
+| photopainter-host | ESP32-S3 factory | Wi-Fi、NimBLE、鉴权、A/B、ELF 加载、Manager、SDK、板级显示 | 宿主 bin |
+| photoframe | 由宿主加载的唯一前台 | PNG 校验、收图状态、首屏、业务回执 | 独立 app.elf / pkg |
+| ai-quota-frame | Mac / Windows / Linux | 数据采集、Chrome 渲染、设备客户端、串行后台和本机 IPC | Go 程序、LaunchAgent 等 |
+| photopainter-console | macOS | 设备状态、操作、通信和诊断界面 | SwiftUI Console.app |
 
-例如：把额度页面的字体放大，只改电脑端；相框启动时换一张等待页，只改相框应用；修改 GPIO 或屏幕电源时序，则改宿主的板级组件。
+独立控制台源码：[photopainter-console](https://github.com/M1nt-Ch0c0/photopainter-console)。它通过受文件权限保护的 Unix socket 调用 Go 后台，后台仍是唯一设备操作入口。控制台不另开 BLE 连接，也不读取普通服务日志或源端凭据。
 
-## 一张图看运行过程
+## 运行链路
 
 ```mermaid
 flowchart TB
-    API[远端 CPA / CMP：账号、额度、用量] --> Gateway[Google 登录网关：服务账号 ID Token，仅放行采集路由]
-    Gateway --> PC[ai-quota-frame：采集、排版、生图]
-    PC -->|PNG + Bearer| HTTP[设备 HTTP：鉴权、大小和目标检查]
-    CLI[管理工具：安装、切换、更新] --> HTTP
-    PC <-->|按 ID 发现、双向 HMAC、通用应用特征读写| BLE[宿主常驻 NimBLE 外设]
-    CLI -->|分块包上传、显式激活及查询| BLE
-    HTTP --> Manager[App Manager：唯一调度任务]
-    BLE -->|同一接纳锁、应用事件和安装路径| Manager
-    Key[GPIO 4 功能键] --> Manager
-    Events[定时和网络状态] --> Manager
-    Manager --> Catalog[Flash：5 个应用，各自 A/B]
-    Manager --> Loader[ELF Runtime：只加载一个应用]
-    Loader --> App[相框 / 色带 / 其他 ABI 2 应用]
-    App -->|统一六色像素帧| Services[宿主显示服务]
-    Services --> Board[板级组件：旋转打包、电源、E6]
-    Board --> Panel[电子纸]
-    App <--> Cache[宿主 RAM 缓存：由应用决定内容与恢复方式]
-    App <-->|ABI 2.1：描述与值副本、合作式事件| AppBLE[宿主应用 GATT 服务：切出自动注销]
-    AppBLE <--> BLE
-    AppBLE --> AppRx[photoframe APP 收图：ABI 2.1]
-    AppRx --> Services
-    Manager -->|BLE 连接、断开和写入事件| App
+    Cloud[CPA / CPM 数据源] --> Gateway[Google ID Token 网关]
+    Gateway --> Backend[ai-quota-frame：采集、渲染、串行设备队列]
+    GUI[独立 SwiftUI 控制台] <-->|本机 Unix socket| Backend
+    Backend <-->|发现、双向鉴权、应用 OTA| GATT[宿主 GATT 管理通道]
+    Backend <-->|已鉴权 CoC 连续数据| COC[宿主单所有权 CoC]
+    GATT --> Manager[唯一 App Manager]
+    COC <--> Queue[有界 RX / TX 队列]
+    Queue -->|就绪事件| Manager
+    Key[GPIO 4、定时、网络事件] --> Manager
+    Manager --> Runtime[ELF Runtime]
+    Runtime --> App[当前前台 APP]
+    App <-->|ABI 2.2 非阻塞收发| Queue
+    App -->|已验证六色逻辑帧| Display[宿主显示服务]
+    Display --> Board[ALDO4 电源、旋转打包、E6 SPI]
+    Board --> Panel[Spectra 6]
+    Manager --> Catalog[五 bank / 每 APP A-B]
 ```
 
-HTTP、BLE 和按键通过同一个管理器安排执行顺序；APP 生成内容，宿主显示服务调用固定硬件。常驻应用 OTA 复用 `app_manager_stage()` 和既有激活/确认/回退状态机。图中的 APP 收图节点已实现并合入 main，仍待剩余实机验收；现有兼容宿主 PNG 通道仍调用 `app_manager_render()`，其客户端与测试保留，停止继续扩展。业务发送不能抢回当前应用选择。
+现有 HTTP 输入/管理和旧宿主 PNG opcode 15/16/17 保留兼容。新图片路径属于 photoframe：GATT 先鉴权和查询能力，CoC 传连续数据，APP 负责 BEGIN/CHUNK/COMMIT/QUERY/CANCEL、整图 SHA、PNG 和最终显示回执。业务发送不自动抢回前台应用。
 
-`esp32s3` 不在运行链路中。设备不访问额度接口，也不持有任何远端凭据。管理密钥只留在服务器网关内，电脑端只持有一个无权限的 Google 服务账号密钥；设备鉴权令牌与 Wi-Fi 配置仍由宿主管理。
+## ABI 与单所有权
 
-## 应用如何运行和切换
+应用是可卸载 ELF，与宿主共享地址空间，不是独立进程。只有一个应用运行；框架仍支持最多五个已安装 APP、每个 APP 两个 1 MiB 数据槽。设备目前实际保留哪些版本以签名目录和 [状态页](wiki/Status-and-Evidence.md) 为准。
 
-这里的应用是一份 ELF 代码，不是手机上的独立进程。当前最多安装 **5 个应用**，每个应用有两个 1 MiB 版本槽，同一时间只运行其中一个。A/B 表示升级前后两个版本，不能算成 10 个应用。
+- ABI 2.0：START、INPUT、TIMER、NETWORK、STOP；显示、缓存、时间等通用服务。
+- ABI 2.1：一个受管 GATT 服务、最多四个特征、每值最多 128 字节，BLE 事件编号 6。
+- ABI 2.2：一个由前台运行代次独占的 CoC 注册/连接，COC 事件编号 7，不改变旧结构布局。
 
-ABI 是宿主与应用约好的调用规则。ABI 2 接收 START、INPUT、TIMER、NETWORK_CHANGED、STOP 五种事件；每次处理完都要报告结果。两个真实应用的 START 已实现自主页面：
+CoC 的 `open/info/recv/send/close` 不提供多应用 socket 表。APP 事件内非阻塞调用；数据由宿主复制、有界排队。普通断线清空连接队列并更新 session，保留注册；切出/卸载撤销所有权。无线任务不保存 ELF 回调或借用指针。
 
-| 场景 | 实际执行 |
+Mac CoreBluetooth 提供字节流，宿主增量解析长度封套，NimBLE 处理 SDU 分段重组与 credits。典型 4 KiB 预算对应 4058 字节应用记录，photoframe 的 CHUNK 图片部分为 4036 字节。GATT 的 128 字节限制不影响 CoC。
+
+接口见 [ABI 与版本](wiki/ABI-and-Versioning.md)、[CoC](wiki/Application-CoC.md)；精确无线字段以宿主 `docs/abi-2-2-coc.md` 为准。
+
+## 调度、显示与恢复
+
+所有 APP 入口由 Manager 串行调用。每次有效入口恰好报告一次结果；普通逻辑预算 5 秒，同步显示与旧 ABI 1 调用预算 650 秒。CoC 每次事件有限批量处理，数据事件不反复扫描全部 Flash 应用槽。
+
+切换顺序为 STOP → 撤销 timer/GATT/CoC/旧事件 → 卸载 → 加载目标 → START → 就绪与确认。独立 Wi-Fi/NimBLE 系统任务仍属于宿主，不是 APP 的后台执行环境。
+
+显示 APP 的 START 要求 APP_READY 与所声明的首屏完成。更新写备用槽，显式激活后确认；失败或确认前重启按目录恢复。启动 active 失败只尝试 previous 一次，再失败则保持可管理故障空闲。保留框架恢复能力与设备实际只安装一个版本并不矛盾。
+
+发送进度、包暂存成功、ELF 加载、运行就绪、版本确认和实体显示完成是不同事实。只有匹配请求 ID/长度/SHA 的最终 APP 回执，才能证明本次刷新及最终 POWER_OFF 成功；画面方向和颜色仍需人工确认。电子纸保留图像不证明设备在线。
+
+## 电脑端与数据源
+
+CPA/CPM 数据经 HTTPS 网关读取。电脑使用 Google 服务账号换取 ID Token，网关 oauth2-proxy 校验后由 nginx 注入管理认证；设备不保存远端管理、OAuth 或服务账号凭据。源端连接参数与设备独立令牌放在私有运行目录，不能写入仓库、日志示例或 GUI。
+
+Mac 后台使用 `PhotoPainter Renderer.app` 身份和 `com.m1ntch0c0.ai-quota-frame` LaunchAgent，控制台使用独立的 `PhotoPainter Console.app` 身份。关闭控制台不关闭后台。迁移时保留主题、平台行、时区、刷新间隔及代理依赖；后台继续只主动访问数据源和设备，不恢复旧的公网/本机 TCP 健康端口。
+
+Windows 历史看门狗只检查进程是否存在。硬件操作前要停掉计划任务、看门狗及子进程；不能使用已经不存在的 `:8787/healthz` 来强杀服务。Linux/Windows 当前 CoC 后端尚未接入时继续使用原 GATT 图片路径，不据 ESP 能力直接假定电脑支持 CoC。
+
+## 实测与边界
+
+2026-10-27 已完成宿主 factory 更新与分区外 MD5 比对，photoframe v20 确认运行，Mac CoC 收发成功。67,509 字节发送阶段为 2.477 秒，平均 26.6 KiB/s；01:49:21（UTC+8）取得最终显示回执。该发送计时不含全部连接和刷屏过程，也不等于各种环境下的吞吐保证。
+
+此前 POWERON 下线原因仍未定位；当前遥测没有电池电压或 PMIC 关机原因，不能把重启码单独归因于 USB、没电或软件。更换传输方式也不构成此问题已经修复的证据。
+
+当前没有通用 APP Wi-Fi socket/HTTP client、宿主整机 OTA、应用后台线程或进程沙箱。宿主通过 USB 更新 factory；应用通过既有 OTA 独立更新。完整 Flash/SD 备份属于恢复材料，和可清理的构建产物、旧包、日志分开管理。
+
+## 改动影响
+
+| 想改什么 | 修改位置 |
 |---|---|
-| 开机进入相框 | 有可用 RAM 缓存则恢复图片；重启后缓存通常为空，显示 WAITING FOR IMAGE |
-| 电脑推来额度图 | 相框完整解码验色，然后调用宿主显示服务；成功后保存可选帧缓存 |
-| 短按切到色带 | 相框 STOP → 卸载 → 色带 START → 自行生成六色帧 → 刷屏 → 确认选择 |
-| 短按切回相框 | 相框 START 自己选择恢复缓存或等待页，不需要电脑先发送触发图片 |
-| 色带运行时额度服务推图 | 默认目标仍是相框，宿主返回 409；不会抢回相框或把额度画进色带 |
-| 更新色带 | 写色带备用槽，显式 activate 启动新版；相框的两个槽保持不变 |
-| 未来增加时钟 | 应用在 START 显示时间或“时间未设置”，登记定时事件；切出后宿主取消定时器 |
-| BLE 回显示例 | ABI 2.1 在 START 注册一个自定义 GATT 服务；鉴权写入交给 App Manager，再由应用设置回显值；STOP 或卸载时取消服务和事件 |
+| 页面主题、数据源、更新间隔 | ai-quota-frame |
+| 控制台设备操作与诊断呈现 | photopainter-console + 后台 console IPC |
+| 相框图片业务和启动内容 | photoframe |
+| 通用通信接口、调度或驱动 | photopainter-host；同步 SDK 和应用副本 |
+| 规范、维护说明、跨仓导航 | esp32s3/wiki |
 
-GPIO 4 短按在空闲时循环选择有 active 版本的 ABI 2 应用。忙时、长按或启动时按住不会积压多次切换。pending 更新不会被按键偷偷激活。BOOT 和电源键保持原功能。
-
-## 哪些耦合是必要的
-
-“耦合”是两部分必须知道彼此的约定。例如插头和插座需要相同规格，这种联系是必要的；但插座不需要知道接入的是台灯还是风扇。
-
-本次运行层把宿主与应用的联系收窄到 SDK、事件、逻辑帧和明确的返回结果。宿主不再要求所有应用先收到 PNG，也不写“相框要恢复哪张图”这类业务分支。相框决定内容，宿主保证显示接口和资源顺序。
-
-| 连接 | 仍需共同遵守的约定 | 修改影响 |
-|---|---|---|
-| 电脑 → 宿主 | 端口 80、Bearer、原始 PNG、最大 5 MiB、HTTP 状态 | 改协议需两端兼容 |
-| 电脑 → 宿主 BLE | 协议 v1、稳定设备 ID、双向 HMAC、序列号、GATT 分块与完成凭据 | 图片和应用包均无需 IP 路由；图片扩展先协商能力 |
-| 电脑 → 相框 | 800×480、非隔行、完全不透明、精确六色 | 改图像格式需生成与解码两端验证 |
-| 宿主 → ABI 2 应用 | SDK 字段布局、manifest、允许导入、事件与结果码 | 新服务或接口变化需兼容宿主 |
-| 应用 → 显示服务 | 从左上逐行的 384000 字节六色索引帧 | 应用不再自行旋转或使用 GPIO/SPI |
-| 宿主板级组件 → 硬件 | 固定引脚、电源和 E6 时序 | 更换硬件需要更新宿主 |
-
-构建仍独立：宿主不调用兄弟应用工程，不嵌入业务 ELF。页面逻辑升级只更新应用；板级驱动升级需要更新宿主。设备两仓固定使用同一 ESP-IDF 提交和未修改的 Registry elf_loader 1.3.3。
-
-仍然存在原生代码共享内存的限制：应用不是沙箱，严重故障可能使设备重启。ABI 2 禁止直接导入任务/ISR/硬件 API，用宿主定时事件替代后台回调。缓存是有上限且可失败的 RAM，不是断电保存的相册。
-
-ABI 2.1 保持原结构布局，增加受管 BLE 导入和 BLE=6 事件。旧 `APP_MANIFEST` 仍声明 2.0，新服务使用 `APP_MANIFEST_BLE` 声明 2.1；宿主和打包工具拒绝在旧声明下使用新导入。应用只能注册自己的一个服务、最多四个特征，每值最多 128 字节；宿主复制描述和数据，不保存 ELF 回调。写入绑定运行代次和服务版本，切出清理后拒绝旧请求。发现广播及安装通道始终归宿主。
-
-## 兼容、确认与恢复
-
-旧 ABI 1 仍能运行，保留原 PNG 桥接和 ELF 内的显示驱动，但没有 START 首屏，故功能键跳过它。CLI 仍能选择它，首次推图后确认。ABI 2 在 START 正确就绪且完成声明所需首屏后确认；无显示测试应用也可以确认。
-
-```mermaid
-flowchart LR
-    Stage[上传备用槽] --> Trial[显式试运行，先写日志]
-    Trial --> Start[加载并 START]
-    Start --> Ready[就绪及所需首屏完成]
-    Ready --> Commit[确认选择和版本]
-    Start -->|失败| Restore[恢复旧应用并重新 START]
-    Trial -->|确认前重启| Restore
-```
-
-开机的已确认应用也有独立启动保护日志：active 失败只尝试 previous 一次；previous 也失败就停止应用执行，保留可用的鉴权管理能力，避免两个坏版本无限重启。损坏目录或保护记录不会被擦除或猜测恢复。
-
-推图 HTTP 200 或 BLE 的鉴权完成凭据表示本次实体刷新和最终 POWER_OFF 等待完成；“ELF 已加载”“应用就绪”“版本已确认”是不同状态。状态接口分别提供 `ready`、`runtime_ready`、`confirmed` 与最近事件的显示凭据。电子纸保留旧图不代表设备此刻正在运行那个应用。
-
-## 电脑端数据源与常驻运行
-
-额度与用量来自服务器上的 CPA（CLIProxyAPI）和 CMP（cpa-manager-plus）。CPA 不直接对公网开放；电脑端通过 CMP 所在的 HTTPS 网关取数，不再使用 SSH 隧道：
-
-```mermaid
-flowchart LR
-    PC[ai-quota-frame] -->|"Bearer：Google ID Token"| Edge[Cloudflare]
-    Browser[浏览器] -->|Google 登录 Cookie| Edge
-    Edge --> Ingress[nginx 入口：只转发 JWT 形式的 Authorization；机器身份只放行四个路由]
-    Ingress --> OAuth[oauth2-proxy：校验签名、签发方、受众与邮箱白名单]
-    OAuth --> Backend[nginx 后端：再次鉴权，注入 CMP 管理密钥]
-    Backend --> CMP[CMP] -->|"/v0/management/* 转发，使用已保存的 CPA 密钥"| CPA[CPA]
-```
-
-- **机器身份**：电脑端用 Google 服务账号的 JSON 私钥签名断言，向 Google 换取一小时有效的 ID Token，受众是网关 oauth2-proxy 的 client_id，提前 5 分钟刷新。服务账号不需要任何 GCP IAM 角色，只用于证明身份，并须列在网关邮箱白名单中。配置项为 `GOOGLE_SERVICE_ACCOUNT_FILE` 与 `GOOGLE_ID_TOKEN_AUDIENCE`，两个 `BASE_URL` 都指向网关。
-- **最小放行**：带 ID Token 的请求只能访问 `GET auth-files`、`GET auth-files/download`、`POST api-call` 和 `GET dashboard/summary`，其他管理路由在入口返回 403。这类请求带 Bearer 头，浏览器不会跨站自动附带，所以跳过面向浏览器的 Origin 检查。浏览器发来的其它 `Authorization` 头在入口被丢弃，网页面板继续使用 Google 登录。
-- **撤销**：在 GCP 删除该服务账号密钥，或从网关邮箱白名单移除它，即可立即切断电脑端取数。
-- **已知取舍**：Grok 的计费接口需要账号 ID，程序通过 `auth-files/download` 读取，该接口返回的是完整凭据文件，经 HTTPS 传到电脑后只解析其中的 `sub` 字段。
-- **配置位置**：网关的 nginx、oauth2-proxy 配置和邮箱白名单只保存在服务器上，不在任何仓库中；修改前先备份，并用 `nginx -t` 检查。也可以不经网关，改用本机回环地址上的 CPA 和静态管理密钥，见 [ai-quota-frame 鉴权说明](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)。
-
-显示哪几家由 `DISPLAY_PROVIDERS` 决定，最多 5 行，与 CPA 中实际登录的账号无关。未显示的平台仍会被采集，它们的报错也会出现在页面顶部警告中。
-
-### Windows 常驻运行
-
-Windows 部署使用计划任务启动一个仓库外的看门狗 PowerShell 脚本，脚本循环检查，只在 `ai-quota-frame.exe` **不在运行时**才启动它，并把上一次运行的日志轮换为 `.log.1`。2026-10-23 迁移到 Mac 时已停用 Windows 计划任务、看门狗及推图进程，避免两个服务争用设备。
-
-- 服务只主动推图，不监听任何端口，所以看门狗只能以"进程是否存在"判断健康。**不要恢复以 `:8787/healthz` 判断健康并强杀重启的旧写法**：新版程序没有这个端口，检查永远失败，结果是服务每分钟左右被强杀一次，渲染中的 Chrome 残留成孤儿进程，推图状态也跟着丢失。
-- 渲染时每帧启动一个无头 Chrome。结束时先让 Chrome 正常退出，再清理残留：Unix 上 Chrome 放在独立进程组里，结束后杀掉整组；Windows 上服务进程加入一个设置了 `KILL_ON_JOB_CLOSE` 的 Job Object，Chrome 和它的子进程自动继承这个 Job，所以服务即使被强杀，系统也会回收整棵进程树。
-- 停止服务时，`Stop-ScheduledTask` 只结束计划任务的外层进程，**看门狗 PowerShell 和它启动的 exe 会继续运行**。硬件测试前要连同这两个进程一起结束，并确认 `ai-quota-frame` 进程数为 0。
-
-macOS 部署使用 LaunchAgent，见 [ai-quota-frame README](https://github.com/M1nt-Ch0c0/ai-quota-frame#macos-常驻运行)。
-
-### macOS BLE 部署
-
-Mac 原生构建使用 Go 1.26.0 和 CGO，链接 CoreBluetooth；应用包声明蓝牙和本地网络用途，BLE CLI 也能通过同一应用身份加载私有配置。LaunchAgent 负责登录启动、进程退出重启，仍不提供入站健康端口。数据源可使用与 Windows 相同的受限 HTTPS 网关和 Google ID Token；存在本机代理的环境需要给服务配置相应代理，设备推图始终绕过代理。
-
-2026-10-23 相框已移到 Apple Silicon Mac 旁，使用独立 USB 供电、没有电池和 microSD。应用蓝牙权限可用，运行配置已切到纯 BLE；设备无需连接 Wi-Fi，Mac 仍需联网采集额度。SSH 只用于部署和维护，BLE 实际由现场 Mac 发起。具体版本、离线推图及更新测试证据见 [macOS 部署记录](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/main/docs/macos-deployment.md)。
-
-### 设备网络
-
-BLE 图片默认通过 photoframe APP 的 ABI 2.1 服务发送，协议见 [应用原件](https://github.com/M1nt-Ch0c0/photoframe/blob/main/docs/ble-image-input.md)。宿主专用 PNG 通道保留兼容；以下缓存和接纳锁描述针对该旧通道。常驻发现和 OTA 不受当前 APP 选择影响。
-
-配置 `PHOTOFRAME_DEVICE_ID`，或先用 `ble bind --device-id ...` 鉴权并绑定设备后，电脑端会在启动和推图失败时通过 BLE 寻找对应设备。绑定仅将公开 ID 写入系统用户配置目录下的独立 JSON，不改 `.env`；显式环境变量优先。ID 来自稳定的 Wi-Fi MAC，不依赖系统显示的蓝牙地址。广播及只读特征提供协议版本、联网状态、IPv4 和 SSID 的截断 SHA-256；不发布 SSID 明文、令牌或密码。常见 SSID 仍可能被猜测比对，稳定 ID 也允许近距离追踪。
-
-设置 `PHOTOFRAME_PUSH_TRANSPORT=ble` 后，电脑按设备 ID 发现并做双向 HMAC 挑战响应，通过签名应用特征读写向当前 photoframe ABI 2.1 服务发送 PNG。它不需要设备 IP，不访问 `PHOTOFRAME_PUSH_URL`，也不回退 HTTP。命令和响应带会话序列号及 HMAC，防止伪造和重放；BLE 链路本身不加密，图片、包内容和状态不保密，令牌始终不通过 BLE 明文传输。
-
-默认 `PHOTOFRAME_PUSH_TRANSPORT=http` 保持旧部署行为：BLE 认证发现私有 IPv4 后，只更新进程内的 `/api/push` 目标，不改 `.env`；`PHOTOFRAME_PUSH_URL` 可作为初始地址。此模式仍要求 IP 可达，BLE 发现不会建立跨网段路由。选择纯 BLE 才能使发现、推图和应用更新都不依赖相框 Wi-Fi。
-
-BLE PNG 上限仍是 5 MiB，接收缓冲只分配在 PSRAM，与 HTTP 和应用安装共用接纳锁。断线前未提交的接收会释放内存，可整包重传；COMMIT 可能已经触发刷新时，客户端只查询原请求凭据，不重新提交。宿主每次开机在 RAM 中保留 4 条凭据，重启或凭据丢失后停止该图片的自动重试，不承诺跨电脑进程重启的永久去重。应用包成功暂存也不代表激活或物理刷新。Windows 看门狗仍只检查进程存在，不新增监听端口。
-
-设备只支持 2.4 GHz；合法 SD `config/wifi.json` 的权威性和 NVS 网络列表规则不变。Wi-Fi 不可用或配置损坏不阻止本地应用与 BLE 发现启动；管理操作仍需要有效的设备令牌。通过不带鉴权的 HTTP 请求检查可达性时，正常应返回 401。不要通过打开原生 USB 串口检查在线状态，它会使设备复位。
-
-此次增加宿主代码，不改分区表，也没有宿主整机 OTA。授权更新时，在完整备份并校验后，只写 `0x10000` 的宿主二进制，保留应用槽、激活日志及 NVS。本次 Windows 实机已验证发现、鉴权、分块错误、HTTP 409、断开清理、完整 1 MiB 包校验与暂存、小包激活和回滚、ABI 2.1 回显及通知；5 MiB 图片推送取得 HTTP 200，用户已确认方向、六色顺序和定位方块正确。联网时内部 RAM 增加占用约 73 KB、PSRAM 约 27 KB，上传缓冲放在 PSRAM。60 秒空闲后主动断开、释放接收内存和重新鉴权均已验证；大包上传后两次发现分别用时 5.2 秒和 8.7 秒。
-
-实机验收有供电条件：电脑 USB 连接时曾发生无人操作的 POWERON 重启，换线、换直连端口以及临时关闭 USB 选择性暂停均未消除。改用独立 USB 电源、没有电池、断开电脑 USB 后，同一固件完成 1 MiB 传输、备用槽暂存及测试候选清理，传输约 9 分 15 秒，全程未重启。该对照不能确定具体故障部件；当前运行保留独立供电，Windows 电源设置已恢复，自动推图随本次迁移停用。状态提供启动时长和复位原因辅助后续诊断。完整范围、版本和待测场景以宿主 BLE 验证记录为准，长期耐久仍待验证。
-
-## 操作和验收入口
-
-- [应用运行层、功能键、SDK 与状态字段](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-runtime-v2.md)
-- [本轮构建与实机验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-runtime-v2.md)
-- [五应用分区、SD/NVS 多 Wi-Fi 与管理命令](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs-multi-apps.md)
-- [应用构建与六色示例](https://github.com/M1nt-Ch0c0/photoframe/blob/main/README.md)
-- [电脑端配置与鉴权](https://github.com/M1nt-Ch0c0/ai-quota-frame#鉴权)
-- [BLE 协议与应用 ABI 2.1](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/ble-protocol.md)
-- [BLE 构建证据与 Windows 验收记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-ble.md)
-- [Mac 离线 BLE 推图、更新及内存记录](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/validation-ble-images.md)
-- [电脑端 BLE 命令](https://github.com/M1nt-Ch0c0/ai-quota-frame/blob/main/docs/ble.md)
-
-Wi-Fi 的合法 SD JSON 权威性、原子迁移和备份规则不变。应用启动与 Wi-Fi 分开：未配网或网络不可达时，离线应用仍可运行。源码不保存密钥、设备备份或含凭据日志。
+宿主不构建或嵌入业务 ELF。设备两仓固定使用 ESP-IDF `5e6f53cdb31fe5708eae3f55af9737be2822db22` 与未修改的 Registry elf_loader 1.3.3；APP 同步 SDK 头与导入列表，包格式和分区布局保持兼容。

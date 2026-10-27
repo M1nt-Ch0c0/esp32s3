@@ -2,7 +2,7 @@
 
 [返回首页](Home.md)
 
-服务声明以[版本化 SDK](https://github.com/M1nt-Ch0c0/photopainter-host/blob/b4709c0/sdk/photopainter_app.h)为准。应用必须在宿主调用的有效事件内使用服务；它们不是任意线程都可调用的系统 API。
+服务声明以当前版本的 `photopainter-host/sdk/photopainter_app.h` 为准，源码对应关系见 [状态页](Status-and-Evidence.md)。应用必须在宿主调用的有效事件内使用服务；它们不是任意线程都可调用的系统 API。
 
 ## 服务与资源上限
 
@@ -19,8 +19,13 @@
 | `app_host_ble_register_v2(service)` | 2.1 | 复制描述；每 APP 一个服务、最多四特征 |
 | `app_host_ble_set_v2(index, data, bytes)` | 2.1 | 复制值，每值最多 128 字节，不保证通知被客户端消费 |
 | `app_host_ble_unregister_v2()` | 2.1 | 撤销注册和事件；STOP 中可显式调用 |
+| `app_host_coc_open_v22(config)` | 2.2 | 当前前台 APP 独占一个注册，按预算分配队列 |
+| `app_host_coc_info_v22(info)` | 2.2 | 查询状态、PSM、session 和记录上限 |
+| `app_host_coc_recv_v22(session, dst, cap, &n)` | 2.2 | 非阻塞读取完整记录；缓冲太小不消费 |
+| `app_host_coc_send_v22(session, src, n)` | 2.2 | 复制入发送队列；满队列返回 AGAIN |
+| `app_host_coc_close_v22()` | 2.2 | 撤销所有权并回收；STOP 可调用 |
 
-完整 BLE 注册限制、事件处理和认证读写见 [应用 BLE](Application-BLE.md)。当前网络服务只通过 context 提供连接状态；没有 APP Wi-Fi socket、HTTP client、文件系统、SD 读写或凭据读取接口。
+GATT 注册与事件见 [应用 BLE](Application-BLE.md)；CoC 的记录边界、背压及 I/O 状态见 [CoC 接口](Application-CoC.md)。当前网络服务只通过 context 提供连接状态；没有 APP Wi-Fi socket、HTTP client、文件系统、SD 读写或凭据读取接口。
 
 ## 显示
 
