@@ -2,7 +2,9 @@
 
 [返回首页](Home.md)
 
-先区分数据源、电脑渲染、BLE/HTTP 传输、APP 生命周期和物理显示，避免通过刷新屏幕或打开串口探测在线。
+当前配对 v2 **尚未实机验证**；先按 [早上验收清单](../docs/MORNING-ACCEPTANCE.md) 确认候选与回滚点。
+
+先区分数据源、电脑渲染、BLE 传输、APP 生命周期和物理显示，避免通过刷新屏幕或打开串口探测在线。
 
 ## 安全的检查顺序
 
@@ -42,8 +44,8 @@ launchctl bootout gui/$(id -u)/com.m1ntch0c0.ai-quota-frame
 | 观察 | 可能含义与下一步 |
 |---|---|
 | 电子纸仍有图 | 只证明保留画面，继续检查鉴权连接 |
-| BLE 可发现但鉴权失败 | 检查设备 ID、独立令牌、会话是否需要重建，不打印令牌 |
-| 同网仍无法 HTTP | 检查地址、路由和客户端隔离；发现不会建立 IP 路由 |
+| BLE 可发现但鉴权失败 | 检查设备 ID、保存的配对关系/BID和会话；必要时通过功能键重新配对 |
+| 旧 HTTP 返回 410 | v2 已退役旧 token 控制入口，使用已配对 BLE；不是改回旧 token 的理由 |
 | IP `0.0.0.0` | 无 IPv4，不妨碍常驻 BLE 或合格的 APP BLE 服务 |
 | 应用写入返回 busy/state | 可能有上传/显示、应用已切出、旧代次或队列满；不紧密重试 |
 | PNG 被拒绝 | 先原生验证尺寸、CRC、隔行、透明度、六色和尾随字节 |
@@ -55,4 +57,4 @@ launchctl bootout gui/$(id -u)/com.m1ntch0c0.ai-quota-frame
 
 历史电脑 USB 供电出现过 POWERON 复位，独立供电下通过过长包传输；这不足以确定故障部件或证明长期耐久。具体数值和环境见 [验证记录](Status-and-Evidence.md)。
 
-设备 HTTP 的未授权请求可用于无显示的可达性检查；实际 POST /api/push 等业务操作和兼容错误码见[兼容参考](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/legacy-image-input.md)。不要为排查网络问题重复 provision 或覆盖 NVS。
+v2 的 HTTP 410 可用于无显示的可达性观测，不表示旧控制操作可用。旧 v1 POST /api/push 与错误码仅见[兼容参考](https://github.com/M1nt-Ch0c0/photopainter-host/blob/main/docs/legacy-image-input.md)。不要为排查网络问题重复 provision 或覆盖 NVS。

@@ -2,7 +2,7 @@
 
 [返回首页](Home.md)
 
-应用更新写的是数据分区中的 ELF 包，不是 factory 宿主固件。同一套目录和状态机同时服务 HTTP 与 BLE；传输层不得自己另外实现激活、确认或回滚。
+应用更新写的是数据分区中的 ELF 包，不是 factory 宿主固件。同一套目录和状态机服务已配对 BLE；历史 v1 也曾通过 HTTP 使用它，v2 旧 HTTP 入口为 410；传输层不得自己另外实现激活、确认或回滚。
 
 ## 包和目录
 
@@ -39,9 +39,9 @@ stage/install 不执行 APP。activate 试运行 pending；switch 选择已确�
 
 ABI 2 在 START 满足就绪和声明的首屏后确认；ABI 1 保留首次成功 PNG 输入确认。管理命令成功、已加载和一次物理显示成功是不同事实，应读取完整状态判断。
 
-## BLE 与 HTTP 管理示例
+## 当前 BLE 管理与历史 HTTP
 
-停止自动 pusher，确认设备与令牌，按已授权的测试范围执行：
+停止自动 pusher，确认设备和已保存的物理配对关系，按已授权的测试范围执行：
 
 ```sh
 ai-quota-frame ble status
@@ -55,7 +55,7 @@ ai-quota-frame ble rollback --app lifecycle
 
 首次安装没有 previous，不能假定最后一条回退一定可用。安装前核对目录、容量和活动版本；不要覆盖当前已确认槽。
 
-HTTP 管理同样使用原端口 80 和设备 Bearer：
+下列 HTTP 命令仅为旧 v1 固件的历史维护示例，不能用于 v2（返回 410）：
 
 ```sh
 python3 tools/module.py status --url http://DEVICE_IP
@@ -63,7 +63,7 @@ python3 tools/module.py stage --app lifecycle --url http://DEVICE_IP --input /tm
 python3 tools/module.py activate --app lifecycle --url http://DEVICE_IP
 ```
 
-CLI 私下加载令牌；不要把令牌放参数。以上是框架管理命令，应用业务输入另按 APP 文档执行。
+当前 BLE CLI 使用保存的协商关系；历史 HTTP 才使用独立令牌。不要把任何秘密放进参数。以上是框架管理命令，应用业务输入另按 APP 文档执行。
 
 后台安装会区分连接、BEGIN、DATA、COMMIT阶段并报告实际发送字节。只有已鉴权的BEGIN返回BUSY=3（证明尚未接纳）可按75 ms间隔短暂重试，预算约2秒；传输错误、DATA和COMMIT不会因此自动重放。读回目录已达到目标状态时可以确认成功，不能仅凭命令回复丢失就重复写入。
 

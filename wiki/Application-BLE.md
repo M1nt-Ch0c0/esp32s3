@@ -41,7 +41,7 @@
 
 **应用特征的直接 write 也必须使用宿主完整的分片签名帧，不能写裸文本。**原始 GATT read/notify 不带应用层 HMAC，严格校验响应的客户端应使用签名 op 13 读值。通知只是提示：可能被 MTU 长度截断，不能用未验签通知作为显示完成凭据。
 
-现有 echo 的开发客户端（令牌通过可信启动器加载）：
+现有 echo 的开发客户端（先在同一原生客户端完成物理配对，再使用保存的关系）：
 
 ```sh
 ai-quota-frame ble app-write --app ble-echo --characteristic 0 --text hello

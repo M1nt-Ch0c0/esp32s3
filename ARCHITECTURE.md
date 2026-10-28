@@ -1,6 +1,6 @@
 # PhotoPainter 仓库职责与架构
 
-更新日期：2026-10-27。系统由电脑后台制作内容，常驻宿主提供通信与运行服务，唯一前台 APP 处理业务，电子纸完成显示。可视化控制台独立成仓，操作能力与开发原理文档分别维护。源码发布与实机状态见 [证据页](wiki/Status-and-Evidence.md)。
+更新日期：2026-10-29。配对 v2 尚未实机验证；夜间仅发布源码与离线候选，实机步骤见 [早上验收清单](docs/MORNING-ACCEPTANCE.md)。系统由电脑后台或浏览器插件制作内容，常驻宿主提供通信与运行服务，唯一前台 APP 处理业务，电子纸完成显示。可视化控制台独立成仓，操作能力与开发原理文档分别维护。源码发布与实机状态见 [证据页](wiki/Status-and-Evidence.md)。
 
 ## 五个仓库
 
@@ -12,7 +12,9 @@
 | ai-quota-frame | Mac / Windows / Linux | 数据采集、Chrome 渲染、设备客户端、串行后台和本机 IPC | Go 程序、LaunchAgent 等 |
 | photopainter-console | macOS | 设备状态、操作、通信和诊断界面 | SwiftUI Console.app |
 
-独立控制台源码：[photopainter-console](https://github.com/M1nt-Ch0c0/photopainter-console)。它通过受文件权限保护的 Unix socket 调用 Go 后台，后台仍是唯一设备操作入口。控制台不另开 BLE 连接，也不读取普通服务日志或源端凭据。
+独立控制台源码：[photopainter-console](https://github.com/M1nt-Ch0c0/photopainter-console)。它通过受文件权限保护的 Unix socket 调用 Go 后台，后台是原生控制台与自动推图共用的唯一设备操作入口。控制台不另开 BLE 连接，也不读取普通服务日志或源端凭据。
+
+用户单独授权的 [CPM 浏览器插件](wiki/Web-Bluetooth-Plugin.md) 使用独立连接：CPA 原生资源薄壳提供菜单页面，访问页面的电脑通过 Web Bluetooth/GATT 手动推图。它不与原生后台共用队列，因此使用前需暂停自动推图并释放设备；页面结束后恢复原设置。浏览器模块和资源薄壳分别位于 ai-quota-frame 的 `web/`、`plugins/photopainter/`，不改变官方 CPM 前端或设备固件。
 
 ## 运行链路
 
@@ -36,7 +38,7 @@ flowchart TB
     Manager --> Catalog[五 bank / 每 APP A-B]
 ```
 
-现有 HTTP 输入/管理和旧宿主 PNG opcode 15/16/17 保留兼容。新图片路径属于 photoframe：GATT 先鉴权和查询能力，CoC 传连续数据，APP 负责 BEGIN/CHUNK/COMMIT/QUERY/CANCEL、整图 SHA、PNG 和最终显示回执。业务发送不自动抢回前台应用。
+配对 v2 已退役旧 token HTTP 控制入口（410）；旧宿主 PNG opcode 15/16/17 仅保留兼容代码。新图片路径属于 photoframe：GATT 先鉴权和查询能力，CoC 传连续数据，APP 负责 BEGIN/CHUNK/COMMIT/QUERY/CANCEL、整图 SHA、PNG 和最终显示回执。业务发送不自动抢回前台应用。
 
 ## ABI 与单所有权
 
@@ -64,7 +66,7 @@ Mac CoreBluetooth 提供字节流，宿主增量解析长度封套，NimBLE 处�
 
 ## 电脑端与数据源
 
-CPA/CPM 数据经 HTTPS 网关读取。电脑使用 Google 服务账号换取 ID Token，网关 oauth2-proxy 校验后由 nginx 注入管理认证；设备不保存远端管理、OAuth 或服务账号凭据。源端连接参数与设备独立令牌放在私有运行目录，不能写入仓库、日志示例或 GUI。
+当前 CPA/CPM 数据使用 HTTPS 与原管理密钥读取；Manager 已移除 Google 网关和自动注入。电脑通过 `SOURCE_AUTH_MODE=management-key` 显式选择静态认证；仍保留网关的其他部署可显式选择 `google-id-token`。两类凭据同时存在时必须指定模式，不能因旧服务账号文件仍在而静默覆盖管理密钥。设备不保存远端管理、OAuth 或服务账号凭据。源端连接参数和协商得到的设备关系保存在各自受保护位置，不进入仓库或日志。浏览器管理密钥只存在当前页面；BLE 模块使用物理批准后保存的不可导出密钥，设备不接受旧固定 token。
 
 Mac 后台使用 `PhotoPainter Renderer.app` 身份和 `com.m1ntch0c0.ai-quota-frame` LaunchAgent，控制台使用独立的 `PhotoPainter Console.app` 身份。关闭控制台不关闭后台。迁移时保留主题、平台行、时区、刷新间隔及代理依赖；后台继续只主动访问数据源和设备，不恢复旧的公网/本机 TCP 健康端口。
 

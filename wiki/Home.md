@@ -4,6 +4,8 @@ PhotoPainter 使用常驻宿主加载独立应用：宿主管通信、鉴权、�
 
 **当前能力：ABI 2.2 单所有权 CoC、photoframe v20 和独立设备控制台。** 开发前核对 [代码、部署与验证状态](Status-and-Evidence.md)；源码工作区、公开提交和实机观测分别记录。
 
+当前配对 v2 与浏览器完整画面复用已完成软件实现，**尚未实机验证**。下一步见 [早上验收清单](../docs/MORNING-ACCEPTANCE.md)。
+
 ## 开发前先看什么
 
 | 你的任务 | 阅读顺序 |
@@ -14,6 +16,7 @@ PhotoPainter 使用常驻宿主加载独立应用：宿主管通信、鉴权、�
 | 更新或发布应用 | [打包、OTA 与回退](Packages-and-Recovery.md) → [测试与发布准则](Testing-and-Release.md) |
 | 继续相框 BLE 收图 | [已批准的 APP 收图路线](BLE-Image-App-Roadmap.md) → [当前能力与证据](Status-and-Evidence.md) |
 | 操作设备 | [控制台与 CLI](Console-and-CLI.md) → [维护](Operations.md) |
+| 从 CPM 网页推图 | [Web Bluetooth 插件](Web-Bluetooth-Plugin.md) → [BLE 协议](BLE-Protocol.md) |
 | 排查现场问题 | [维护与故障排查](Operations.md) → [术语与常见问题](FAQ.md) |
 | 修改框架或规范 | [兼容性规则](ABI-and-Versioning.md) → [文档维护规则](Documentation.md) |
 

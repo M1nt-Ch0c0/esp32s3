@@ -12,6 +12,8 @@
 | photoframe | 唯一前台 ELF | 图片协议、缓冲、SHA/PNG 校验、首屏和业务回执 |
 | esp32s3 | 文档仓库 | Wiki、架构与跨仓导航 |
 
+配对 v2 由 host 负责物理批准、NVS owner 和功能键重置，APP ABI 仍为 2.2。浏览器插件通过 Go/WASM 复用原采集和渲染。当前配对发布**尚未实机验证**。
+
 ## 当前通道
 
 ```mermaid
@@ -43,6 +45,6 @@ GATT 与 CoC 都由宿主管理；CoC 绑定同一已认证连接和前台运行
 - 修改通用 CoC、ABI 或硬件驱动：更新宿主并同步 SDK。
 - 修改可视化操作：更新独立控制台及其后台 IPC。
 
-原 HTTP 与宿主 PNG opcode 是兼容路径；当前相框图片由 APP 自己处理。ABI 2.2 已有真实 CoC 推图证据，但没有通用 APP Wi-Fi socket/HTTP client、宿主整机 OTA或多进程隔离。
+旧 HTTP 控制只属于 v1 历史兼容，v2 返回 410；宿主 PNG opcode 仍是兼容路径；当前相框图片由 APP 自己处理。ABI 2.2 已有真实 CoC 推图证据，但没有通用 APP Wi-Fi socket/HTTP client、宿主整机 OTA或多进程隔离。
 
 实现入口：宿主 `main/app_manager.c`、`main/app_coc.c`、`main/ble_coc.c`、`main/photoframe_plugin.c`；源码发布与验证范围见 [状态页](Status-and-Evidence.md)。

@@ -15,7 +15,10 @@
 - [测试与发布准则](Testing-and-Release.md)
 - [安全边界](Security.md)
 - [控制台与 CLI 能力](Console-and-CLI.md)
+- [CPM Web Bluetooth 插件](Web-Bluetooth-Plugin.md)
 - [维护与故障排查](Operations.md)
 - [能力与实测证据](Status-and-Evidence.md)
 - [术语与常见问题](FAQ.md)
 - [文档维护规则](Documentation.md)
+
+- [早上验收清单](../docs/MORNING-ACCEPTANCE.md)

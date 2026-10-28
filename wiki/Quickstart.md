@@ -21,11 +21,11 @@ python3 tools/doctor.py
 
 ### 换电脑继续开发
 
-五个仓库的当前实现均已进入 `main`，不依赖上一台电脑的 build 目录或未提交的临时脚本。设备已安装的宿主与 photoframe v20 会保留，换地点或换电脑不要求重新刷写/provision。
+五个仓库的当前实现均已进入 `main`，不依赖上一台电脑的 build 目录或未提交的临时脚本。photoframe v20 的业务 ABI 保持兼容；从 v1 鉴权迁移到配对 v2 需要更新 host。新 owner 需物理配对，不能把软件构建当作设备已更新。配对 v2 尚未实机验证。
 
 - 仅换地点、仍使用原 Mac：保持相框稳定供电、Mac 蓝牙开启及互联网可用；当前相框走 BLE，不要求它加入当地 Wi-Fi。
 - 换新 Mac：克隆上述五仓，安装 Go、Chrome 和 Xcode Command Line Tools；宿主/APP 构建另需固定版本 ESP-IDF。当前 SwiftUI 控制台要求 Apple Silicon、macOS 14+；当前 CoC 客户端为 macOS 实现。
-- 私有 `.env`、设备独立 token、Google 服务账号文件和必要绑定配置不在 Git 中，须通过私有方式迁移，权限保持 0600。配置中的文件路径和本机代理端口须按新电脑调整。
+- 私有 `.env`、可选 Google 服务账号文件和协商关系不在 Git 中。v2 不复制固定设备 token；更换控制端经功能键重置后配对，原生关系文件保持 0600。配置中的文件路径和本机代理端口须按新电脑调整。
 - 若源码不在默认兄弟目录，可在后台私有配置中设置 `PHOTOFRAME_HOST_REPO`，使 doctor、打包和 NVS 生成找到宿主工具；固定 IDF 可通过 `IDF_PATH` 指定。
 - Windows/Linux 可以构建 ESP32 固件与 APP，桌面发送器保留 GATT 路径；当前 SwiftUI GUI 和已完成的 CoC 后端不能直接当成跨平台版本。
 
