@@ -9,7 +9,7 @@
 | 宿主固件（photopainter-host） | 应用 ABI 2.3，配对 v2 | 通过 USB 更新 |
 | 相框应用（photoframe） | v21，声明 ABI 2.3 | 通过蓝牙安装 |
 | 电脑端（ai-quota-frame） | `main` 分支 | 命令行和常驻后台 |
-| CPM 网页插件 | 0.3.3 | CPA 插件，页面在访问者的浏览器里运行 |
+| CPM 网页插件 | 0.3.4 | CPA 插件，页面在访问者的浏览器里运行 |
 | macOS 控制台（photopainter-console） | 0.4.1 | 需要 Apple Silicon、macOS 14 以上 |
 
 ## 兼容关系
