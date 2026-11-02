@@ -48,13 +48,11 @@
 4. **Windows 原生客户端在“读取蓝牙服务列表”时失败**（报错 `Windows service discovery failed: 1`）。这台电脑的 Realtek 8851BU 蓝牙适配器上，不读缓存的服务发现会失败；用管理员权限重启一次适配器有时能恢复。根因未查明。
 5. **电脑端原生客户端不支持大消息通道。** ai-quota-frame 的 Go 客户端只有两条传图路径：Mac 上的 CoC，以及旧的 GATT 小消息（每块约 100 字节）。Windows、Linux，以及 CoC 打不开时的 Mac，都会走慢的那条，速度接近“手机配 v20”的水平。只有网页插件用的是 ABI 2.3 大消息。另外，Go 客户端的图片事务身份只保存在进程内存里，进程重启后无法再查询上一次的回执；网页插件会先存进 IndexedDB 再提交。
 6. **网页插件的限制。** 页面必须保持在前台，锁屏或切到别的应用后定时推送会暂停。安卓上重新加载页面后，可能需要在设备选择框里再选一次相框。页面刚刷新后的第一次连接偶尔会失败，重试即可。
-7. **GitHub 上的固件代码落后于设备。** photopainter-host 和 photoframe 里 ABI 2.3、大消息通道、启动诊断等改动还在本地工作区，没有提交；设备上运行的是工作区构建出来的版本。
-8. **Mac 后台还没升级。** 电脑端已改为只有 `ai-quota-frame daemon` 才启动服务，并移除了 Gemini CLI。Mac 上的后台升级时必须重新运行 `deploy/install-macos.py`，否则旧的 LaunchAgent 只会打印帮助就退出。
+7. **Mac 后台还没升级。** 电脑端已改为只有 `ai-quota-frame daemon` 才启动服务，并移除了 Gemini CLI。Mac 上的后台升级时必须重新运行 `deploy/install-macos.py`，否则旧的 LaunchAgent 只会打印帮助就退出。
 
 ## 待办
 
 - 修启动保护规则，加“激活指定槽”命令，通过 USB 刷新宿主（刷之前完整备份 Flash）。
-- 提交并推送 photopainter-host 和 photoframe 的工作区改动。
 - 在相框上完整走一遍网页插件开发者工具。
 - 决定 Mac 后台是否恢复使用；如果恢复，先长按重置配对，再在 Mac 上重新配对并升级后台。
 - 补做换主人、刷新中途重置的真机测试。
