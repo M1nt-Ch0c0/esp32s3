@@ -367,7 +367,7 @@ cd ..
 
 检查工具找不到 Chrome 时会直接失败，可以用 `CHROME_BIN` 指定路径。这些检查只用本地测试数据，不访问真实的 CPM 或蓝牙。
 
-生产环境的 CPA 跑在 Linux amd64 上，`.so` 必须是 Linux amd64 产物，并且要和服务器的 glibc 版本兼容。推荐的做法是在本地构建好网页资源后，在和生产环境相同发行版（Debian 12）的 Go 容器里、断网运行 `./build-native.sh`。在 macOS 上可以用 Zig 交叉编译 Linux 产物，但只能在 Linux 上运行它的测试。
+`.so` 必须和运行 CPA 的服务器是同一平台（通常是 Linux amd64），并且和服务器的 glibc 版本兼容。推荐的做法是在本地构建好网页资源后，在和服务器相同发行版的 Go 容器里、断网运行 `./build-native.sh`。在 macOS 上可以用 Zig 交叉编译 Linux 产物，但只能在 Linux 上运行它的测试。
 
 构建后可以核对导出的 C 接口和内嵌资源是否和网页产物一致：
 

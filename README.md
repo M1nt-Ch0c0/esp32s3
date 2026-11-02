@@ -24,7 +24,7 @@ PhotoPainter 是一块 7.3 寸六色电子纸相框（微雪 ESP32-S3 PhotoPaint
 | 开发蓝牙客户端或应用通信 | [蓝牙通信](docs/06-bluetooth.md) |
 | 用电脑端、控制台或网页插件 | [电脑端、控制台与网页插件](docs/07-clients.md) |
 | 刷固件、备份或排查问题 | [维护与排错](docs/08-maintenance.md) |
-| 知道现在部署了什么、有哪些已知问题 | [当前状态](docs/09-status.md) |
+| 查各组件版本、兼容关系和已知限制 | [版本与已知限制](docs/09-versions-and-limits.md) |
 | 查一个不认识的词 | [术语表](docs/10-glossary.md) |
 | 修改这些文档 | [文档写作规范](docs/11-writing-guide.md) |
 

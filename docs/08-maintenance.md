@@ -20,7 +20,7 @@
 | 长按功能键 8 秒重置配对 | 不会 | 只清除配对关系 |
 | 蓝牙扫描、读取状态、推图 | 不会 | |
 
-通过 USB 维护触发的复位（复位原因是 USB）不会被启动保护当成应用启动失败。其他复位如果恰好发生在应用启动期间，下次开机可能会被当成启动失败而退回可回退槽，见[当前状态](09-status.md#已知问题)。
+通过 USB 维护触发的复位（复位原因是 USB）不会被启动保护当成应用启动失败。其他复位如果恰好发生在应用启动期间，下次开机可能会被当成启动失败而退回可回退槽，见[启动保护](03-how-the-device-works.md#启动保护)。
 
 ## 维护前的准备
 
@@ -302,7 +302,7 @@ python3 deploy/usb-maintenance.py --action usb-restore \
 | Mac 上没给蓝牙权限 | 系统设置 → 隐私与安全性 → 蓝牙 | 允许 `PhotoPainter Renderer`。用 `deploy/pp.py` 而不是裸终端跑 `ble` 命令 |
 | 安卓浏览器重新加载后忘了设备授权 | 点连接时弹出设备选择框 | 在选择框里再选一次相框，已有配对仍然有效 |
 | 页面刚刷新后的第一次连接失败 | 重试一次能否成功 | 重试 |
-| Windows 服务发现失败 | 见下文 | 见下文 |
+| Windows 蓝牙报错 | 见下文 | 见下文 |
 
 ### 鉴权失败或配对失败
 
@@ -322,12 +322,12 @@ python3 deploy/usb-maintenance.py --action usb-restore \
 
 | 可能原因 | 怎么查 | 怎么处理 |
 |---|---|---|
-| 相框应用被启动保护退回了旧版本 | 开发者工具“读取槽位”：运行中的槽是不是旧版本；状态里 `runtime_diagnostic` 是否出现过 `fallback_attempt` | 用新版本的安装包“上传并激活”。可以做两次，让 A、B 两个槽都是新版本，以后再被退回也还是新版本 |
+| 相框应用被启动保护退回了旧版本 | 读取槽位，看运行中的槽是不是旧版本；状态里 `runtime_diagnostic` 是否出现过 `fallback_attempt` | 用新版本的安装包“上传并激活”。做两次可以让 A、B 两个槽都是新版本，以后即使被退回也还是新版本 |
 | 当前相框应用不支持大消息 | “设备运行诊断”里 `payload_abi_minor` 小于 3 | 安装支持 ABI 2.3 的相框应用 |
 | 用的是 Windows 或 Linux 原生客户端 | 平台 | 这些客户端走每块 106 字节的 GATT，本来就慢。需要快可以用 Mac 或手机网页 |
 | Mac 没有走 CoC | 控制台运行总览里显示的通道 | 确认相框应用支持 CoC；没有时会自动用 GATT |
 
-启动保护为什么会在普通断电后切槽，见[当前状态](09-status.md#已知问题)。
+启动保护为什么会在普通断电后切槽，见[启动保护](03-how-the-device-works.md#启动保护)。
 
 ### 相框应用未就绪
 
@@ -359,23 +359,20 @@ python3 deploy/usb-maintenance.py --action usb-restore \
 
 | 可能原因 | 怎么查 | 怎么处理 |
 |---|---|---|
-| 供电不稳（用电脑 USB 口供电时出现过） | `reset_reason` 为 1（上电）且 `uptime_ms` 变小 | 换独立的 USB 电源适配器供电 |
+| 供电不稳，比如用电脑 USB 口供电 | `reset_reason` 为 1（上电）且 `uptime_ms` 变小 | 换独立的 USB 电源适配器供电 |
 | 应用卡住被看门狗重启 | `reset_reason` 为 3，`runtime_diagnostic` 里 `previous=` 显示重启前停在哪个阶段 | 检查应用代码，或回滚到旧版本 |
 | 程序崩溃 | `reset_reason` 为 4–7 | 通过串口看崩溃日志（打开串口可能再复位一次） |
 | 有人打开了串口或做了 USB 维护 | `reset_reason` 为 11 | 正常现象 |
 
 固件没有电池电压和电源芯片关机原因的数据，单看复位原因无法确定是不是电量问题。如果重启发生在应用启动期间，还可能触发启动保护切槽，重启后先读一次槽位。
 
-### Windows 蓝牙服务发现失败
+### Windows 蓝牙连接失败
 
-原生客户端报 `Windows service discovery failed: 1`，或者网页在读取服务时失败。在部分 Realtek 蓝牙适配器上，Windows 不读缓存的服务发现会失败，而读缓存的操作正常。
+原生客户端报 `Windows service discovery failed: 1`，或者传输中途报 `BLE characteristic read failed`。这类错误来自 Windows 的蓝牙协议栈，和相框无关；没有提交的上传在中途断开不会改动相框上的任何数据。
 
 1. 关掉所有连着相框的浏览器页面和客户端。
-2. 如果这台电脑用 usbipd 把 USB 设备共享给 WSL，确认蓝牙适配器没有处于共享（Shared）状态；是的话用管理员权限 `usbipd unbind` 取消共享。
-3. 用管理员权限重启蓝牙适配器：在设备管理器里禁用再启用它，或在管理员 PowerShell 里对该适配器执行 `Disable-PnpDevice` 和 `Enable-PnpDevice`。
-4. 重新连接。
-
-这个问题的根因还没查明，重启适配器有时能恢复，见[当前状态](09-status.md#已知问题)。
+2. 用管理员权限重启蓝牙适配器：在设备管理器里禁用再启用它，或在管理员 PowerShell 里对该适配器执行 `Disable-PnpDevice` 和 `Enable-PnpDevice`。
+3. 重新连接并重试。
 
 ### Wi-Fi 没有 IP
 

@@ -271,7 +271,6 @@ sequenceDiagram
 
 旧固件的固定令牌鉴权（op 1）在配对 v2 固件上总是被拒绝。旧的 HTTP 控制接口全部返回 410，只有 `/health` 返回 `{"device":"PhotoPainter","protocol":2,"transport":"paired-ble"}`。
 
-配对 v2 的实机验证情况见 [当前状态](09-status.md)。
 
 ## 5. 会话与签名请求
 
@@ -463,7 +462,7 @@ sequenceDiagram
 3. **结果不确定就停下来。** 回执显示 missing、元数据对不上、相框重启过、应用被切走或配对关系变了，都意味着结果无法确认。客户端停止对这张图的自动重试，交给人去看屏幕。
 4. **COMMIT 之前断开可以重来。** 这时图片肯定还没显示，相框会取消接收。用新的随机 ID 整张重传即可。
 
-网页插件把事务身份存在 IndexedDB 里，浏览器关掉再打开也能接着查询。电脑端（Go）的事务身份保存在进程内存里，同一个后台进程的生命周期内遵守同样的规则，详见 [当前状态](09-status.md)。
+网页插件把事务身份存在 IndexedDB 里，浏览器关掉再打开也能接着查询。电脑端（Go）的事务身份保存在进程内存里，同一个后台进程的生命周期内遵守同样的规则，进程重启后无法再查询，见[版本与已知限制](09-versions-and-limits.md)。
 
 ### 三种承载方式
 
@@ -530,5 +529,5 @@ sequenceDiagram
 - [设备是怎么工作的](03-how-the-device-works.md)：应用槽、试运行和启动保护
 - [应用接口参考](05-app-api-reference.md)：GATT、CoC、通用消息的 C 接口
 - [电脑端、控制台与网页插件](07-clients.md)：各客户端怎么用这些协议
-- [当前状态](09-status.md)：验证情况和已知问题
+- [版本与已知限制](09-versions-and-limits.md)：版本、兼容关系和已知限制
 - [提案：统一消息协议](proposals/unified-message-protocol.md)：把三种承载方式合成一套协议的设想
