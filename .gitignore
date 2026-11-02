@@ -6,3 +6,6 @@ Thumbs.db
 # Local design requested to remain outside version control.
 /docs/design/app-runtime-v2.md
 /.ruff_cache/
+
+# Local Windows installer extraction, not project deliverables.
+/Binary/
